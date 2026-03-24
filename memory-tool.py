@@ -1,67 +1,68 @@
 #!/usr/bin/env python3
 """
-AI Memory SQLite - Persistent Memory System for AI Assistants
-SQLite-backed memory with FTS5, semantic search, graph intelligence, and smart context management.
-
-Features:
-- Full-text search (FTS5) + optional semantic search (embeddings)
-- Deduplication and smart conflict resolution
-- Graph intelligence with entities, relationships, and facts
-- Access tracking with automatic priority adjustment
-- Decay system for stale memories
-- Topic-based organization with upserts
-- Session snapshots and backup/restore
-- Configurable project detection
+AI Memory SQLite - Persistent Memory System v5
+SQLite-backed memory with hybrid search (FTS5 + semantic embeddings + RRF fusion),
+graph intelligence (entities, relationships, facts), smart deduplication,
+auto-tagging, decay/expiry, session snapshots, and cross-tool sync.
 
 Usage:
-  memory-tool --init                                # Initialize memory system
-  memory-tool --version                             # Show version
-  memory-tool add <category> <content> [--tags t1,t2] [--project X] [--priority N] [--related ID] [--expires YYYY-MM-DD] [--key topic-key]
+  memory-tool add <category> <content> [--tags t1,t2] [--project X] [--priority N] [--related ID] [--expires YYYY-MM-DD] [--key topic-key] [--derived-from ID1,ID2] [--citations "URL1;path2"] [--reasoning "why"]
   memory-tool search <query> [--full] [--semantic] [--keyword]  # Hybrid search (default), --semantic for semantic-only, --keyword for FTS-only
-  memory-tool get <id>                              # Show full detail for single memory
+  memory-tool get <id>                          # Show full detail for single memory
   memory-tool list [--category X] [--project X] [--tag X] [--stale] [--expired]
   memory-tool update <id> <content>
   memory-tool delete <id>
   memory-tool tag <id> <tags>
-  memory-tool relate <id1> <id2> [type]             # Link related memories
-  memory-tool conflicts                             # Find potential duplicate memories
-  memory-tool merge <id1> <id2>                     # Merge two similar memories
-  memory-tool supersede <old_id> <new_id>           # Mark old memory as superseded by new
-  memory-tool pending                               # Show pending/todo items
-  memory-tool projects                              # Project summary
-  memory-tool topics                                # Generate topic .md files per project
-  memory-tool export [--project X]                  # Regenerate MEMORY.md (smart context)
-  memory-tool stats                                 # Full statistics
-  memory-tool stale                                 # Review stale memories
-  memory-tool decay                                 # Flag stale, deprioritize, expire
-  memory-tool reindex                               # Bulk-embed all active memories for vector search
-  memory-tool snapshot <summary> [--project X]      # Save session snapshot
-  memory-tool auto-snapshot                         # Auto-generate snapshot from git/file changes
-  memory-tool snapshots [--limit N]                 # View recent snapshots
-  memory-tool detect-project                        # Auto-detect project from cwd
-  memory-tool gc [days]                             # Garbage collect old inactive memories
-  memory-tool log-error <command> <error>           # Log a failed command as error memory
-  memory-tool import-md <file>                      # Import memories from session summary markdown
-  memory-tool backup                                # Backup database
-  memory-tool restore <file>                        # Restore database from backup
+  memory-tool relate <id1> <id2> [type]         # Link related memories
+  memory-tool conflicts                         # Find potential duplicate memories
+  memory-tool merge <id1> <id2>                 # Merge two similar memories
+  memory-tool supersede <old_id> <new_id>       # Mark old memory as superseded by new
+  memory-tool pending                           # Show pending/todo items
+  memory-tool projects                          # Project summary
+  memory-tool topics                            # Generate topic .md files per project
+  memory-tool export [--project X]              # Regenerate MEMORY.md (smart context)
+  memory-tool stats                             # Full statistics (includes vector index & graph)
+  memory-tool next                              # Suggest next actions based on current memory state
+  memory-tool stale                             # Review stale memories
+  memory-tool decay                             # Flag stale, deprioritize, expire
+  memory-tool reindex                           # Bulk-embed all active memories for vector search
+  memory-tool snapshot <summary> [--project X]  # Save session snapshot
+  memory-tool auto-snapshot                     # Auto-generate snapshot from git/file changes
+  memory-tool snapshots [--limit N]             # View recent snapshots
+  memory-tool detect-project                    # Auto-detect project from cwd
+  memory-tool gc [days]                         # Garbage collect old inactive memories
+  memory-tool log-error <command> <error>       # Log a failed command as error memory
+  memory-tool import-md <file>                  # Import memories from session summary markdown
+  memory-tool backup                            # Backup database
+  memory-tool restore <file>                    # Restore database from backup
 
-Graph Intelligence:
-  memory-tool graph                                 # Show graph summary
-  memory-tool graph add <type> <name> [summary]    # Add entity (types: person/project/org/feature/concept/tool/service)
+Graph Intelligence (Phase 3):
+  memory-tool graph                             # Show graph summary
+  memory-tool graph add <type> <name> [summary] # Add entity (types: person/project/org/feature/concept/tool/service)
   memory-tool graph rel <from> <rel_type> <to> [note]  # Add relationship (types: knows/works_on/owns/depends_on/built_by/uses/blocks/related_to)
-  memory-tool graph fact <entity> <key> <value>     # Set fact on entity
-  memory-tool graph get <name>                      # Show entity with facts & relationships
-  memory-tool graph list [type]                     # List entities
-  memory-tool graph delete <name>                   # Delete entity
-  memory-tool graph spread <name> [depth]           # Spreading activation (default depth=2)
-  memory-tool graph link <memory_id> <entity>       # Link memory to entity
-  memory-tool graph auto-link                       # Auto-link all memories to entities
-  memory-tool graph stats                           # Graph statistics
+  memory-tool graph fact <entity> <key> <value> # Set fact on entity
+  memory-tool graph get <name>                  # Show entity with facts & relationships
+  memory-tool graph list [type]                 # List entities
+  memory-tool graph delete <name>               # Delete entity
+  memory-tool graph spread <name> [depth]       # Spreading activation (default depth=2)
+  memory-tool graph link <memory_id> <entity>   # Link memory to entity
+  memory-tool graph auto-link                   # Auto-link all memories to entities
+  memory-tool graph import-openclaw             # Import from OpenClaw graph DB
+  memory-tool graph stats                       # Graph statistics
 
-OpenClaw Bridge (optional):
-  memory-tool sync                                  # Bidirectional sync (to + from OpenClaw)
-  memory-tool sync-to                               # Export only (memory → OpenClaw)
-  memory-tool sync-from                             # Import only (OpenClaw → memory)
+OpenClaw Bridge (Phase 4):
+  memory-tool sync                              # Bidirectional sync (to + from OpenClaw)
+  memory-tool sync-to                           # Export only (Claude Code → OpenClaw)
+  memory-tool sync-from                         # Import only (OpenClaw → Claude Code)
+
+Run Tracking (Phase 5):
+  memory-tool run start "task description" [--agent claw|claude] [--project X] [--tags x,y]
+  memory-tool run step <id> "step description"
+  memory-tool run complete <id> "outcome summary"
+  memory-tool run fail <id> "reason"
+  memory-tool run list [--status running|completed|failed] [--project X] [--limit 10]
+  memory-tool run show <id>                     # Show full run detail including all steps
+  memory-tool run cancel <id>
 
 Categories: project, decision, preference, error, learning, pending, architecture, workflow, contact
 Priority: 0 (low) to 10 (high). Auto-adjusts based on access frequency.
@@ -76,13 +77,9 @@ import json
 import shutil
 import subprocess
 import hashlib
-import configparser
 from datetime import datetime, timedelta
 from pathlib import Path
 from difflib import SequenceMatcher
-
-# Version
-VERSION = "1.0.0"
 
 # Lazy imports for vector search (optional dependencies)
 _EMBEDDING_MODEL = None
@@ -97,24 +94,11 @@ try:
 except ImportError:
     _VEC_LIBS_AVAILABLE = False
 
-# ── Configuration ──
-
-# Default paths (configurable via environment variables)
-MEMORY_DIR = Path(os.getenv("MEMORY_DIR", os.path.expanduser("~/.local/share/ai-memory")))
-BACKUP_DIR = Path(os.getenv("MEMORY_BACKUP_DIR", os.path.expanduser("~/.local/share/ai-memory/backups")))
-OPENCLAW_DIR = Path(os.getenv("OPENCLAW_DIR", "")) if os.getenv("OPENCLAW_DIR") else None
-
-# Check for default OpenClaw location if not explicitly set
-if not OPENCLAW_DIR:
-    default_openclaw = Path.home() / ".openclaw/workspace/memory"
-    if default_openclaw.exists():
-        OPENCLAW_DIR = default_openclaw
-
+MEMORY_DIR = Path(__file__).parent
 DB_PATH = MEMORY_DIR / "memories.db"
 MEMORY_MD_PATH = MEMORY_DIR / "MEMORY.md"
 TOPICS_DIR = MEMORY_DIR / "topics"
-CONFIG_FILE = MEMORY_DIR / "config.ini"
-PROJECTS_CONFIG = MEMORY_DIR / "projects.conf"
+BACKUP_DIR = Path(os.getenv("MEMORY_BACKUP_DIR", str(MEMORY_DIR / "backups")))
 MAX_MEMORY_MD_BYTES = 5120  # 5KB hard cap
 
 # Staleness thresholds (days)
@@ -130,80 +114,22 @@ MODEL_DIR = Path.home() / ".cache/models/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 RRF_K = 60  # Reciprocal Rank Fusion constant
 
-# Project detection paths (loaded from config)
+# Project detection paths (load from config file or auto-detect from git)
 PROJECT_PATHS = {}
 
 # Auto-tag keywords (generic defaults, extensible via config)
 AUTO_TAG_RULES = {
     "database": ["postgresql", "mysql", "sqlite", "mongodb", "prisma", "sequelize", "migration", "schema"],
     "auth": ["jwt", "login", "password", "token", "auth", "oauth", "bcrypt", "session"],
-    "docker": ["docker", "container", "dockerfile", "compose", "kubernetes"],
-    "api": ["endpoint", "route", "controller", "middleware", "rest", "graphql"],
+    "nginx": ["nginx", "reverse proxy", "ssl", "certbot", "letsencrypt", "apache", "caddy"],
+    "docker": ["docker", "container", "dockerfile", "compose", "kubernetes", "k8s"],
     "react": ["react", "vite", "webpack", "tailwind", "frontend", "tsx", "jsx", "component"],
+    "api": ["endpoint", "route", "controller", "middleware", "rest", "graphql", "express", "fastapi"],
     "git": ["git", "commit", "branch", "merge", "rebase", "pull request", "github", "gitlab"],
     "test": ["test", "jest", "pytest", "unittest", "vitest", "cypress", "playwright"],
     "deploy": ["deploy", "deployment", "ci/cd", "pipeline", "production", "staging"],
     "security": ["security", "vulnerability", "cve", "encryption", "sanitize", "xss", "csrf"],
-    "performance": ["performance", "optimization", "cache", "redis", "memcached", "cdn"],
 }
-
-
-# ── Configuration Loading ──
-
-def load_config():
-    """Load configuration from config.ini if it exists."""
-    global BACKUP_DIR, OPENCLAW_DIR, PROJECT_PATHS, AUTO_TAG_RULES
-
-    if not CONFIG_FILE.exists():
-        return
-
-    try:
-        config = configparser.ConfigParser()
-        config.read(CONFIG_FILE)
-
-        # Load paths
-        if config.has_section('paths'):
-            if config.has_option('paths', 'backup_dir'):
-                BACKUP_DIR = Path(config.get('paths', 'backup_dir'))
-            if config.has_option('paths', 'openclaw_dir'):
-                OPENCLAW_DIR = Path(config.get('paths', 'openclaw_dir'))
-
-        # Load projects
-        if config.has_section('projects'):
-            for path, name in config.items('projects'):
-                PROJECT_PATHS[path] = name
-
-        # Load auto-tag rules
-        if config.has_section('auto_tags'):
-            for tag, patterns in config.items('auto_tags'):
-                AUTO_TAG_RULES[tag] = [p.strip() for p in patterns.split(',')]
-
-    except Exception as e:
-        print(f"Warning: Failed to load config: {e}", file=sys.stderr)
-
-
-def load_project_paths():
-    """Load project paths from projects.conf."""
-    global PROJECT_PATHS
-
-    if not PROJECTS_CONFIG.exists():
-        return
-
-    try:
-        for line in PROJECTS_CONFIG.read_text().strip().split('\n'):
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            if '=' in line:
-                path, name = line.split('=', 1)
-                PROJECT_PATHS[path.strip()] = name.strip()
-    except Exception as e:
-        print(f"Warning: Failed to load projects.conf: {e}", file=sys.stderr)
-
-
-# Load configurations on module import
-load_config()
-load_project_paths()
 
 
 # ── Vector Search Functions ──
@@ -376,9 +302,6 @@ def get_db():
 
 
 def init_db():
-    # Ensure directory exists
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-
     conn = get_db()
 
     # Add columns if upgrading (must run BEFORE triggers reference them)
@@ -390,6 +313,9 @@ def init_db():
         ("source", "TEXT", "'manual'"),
         ("topic_key", "TEXT", "NULL"),
         ("revision_count", "INTEGER", "1"),
+        ("derived_from", "TEXT", "NULL"),
+        ("citations", "TEXT", "NULL"),
+        ("reasoning", "TEXT", "NULL"),
     ]:
         try:
             conn.execute(f"ALTER TABLE memories ADD COLUMN {col} {coltype} DEFAULT {default}")
@@ -485,7 +411,7 @@ def init_db():
             # Silently fail if vec is not available
             pass
 
-    # Graph Intelligence tables
+    # Phase 3: Graph Intelligence tables
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS graph_entities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -535,6 +461,19 @@ def init_db():
             PRIMARY KEY (memory_id, entity_id)
         );
 
+        CREATE TABLE IF NOT EXISTS runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task TEXT NOT NULL,
+            agent TEXT DEFAULT 'claw',
+            status TEXT DEFAULT 'running',
+            started_at DATETIME DEFAULT (datetime('now')),
+            completed_at DATETIME,
+            steps TEXT DEFAULT '[]',
+            outcome TEXT,
+            project TEXT,
+            tags TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_graph_entity_type ON graph_entities(type);
         CREATE INDEX IF NOT EXISTS idx_graph_entity_name ON graph_entities(name);
         CREATE INDEX IF NOT EXISTS idx_graph_rel_from ON graph_relationships(from_entity_id);
@@ -542,13 +481,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_graph_facts_entity ON graph_facts(entity_id);
         CREATE INDEX IF NOT EXISTS idx_mem_entity_memory ON memory_entity_links(memory_id);
         CREATE INDEX IF NOT EXISTS idx_mem_entity_entity ON memory_entity_links(entity_id);
+        CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+        CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project);
+        CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs(agent);
     """)
 
     conn.commit()
     conn.close()
 
 
-# ── Auto-Tagging ──
+# ── Auto-Tagging (Upgrade #5) ──
 
 def auto_tag(content, existing_tags=""):
     """Auto-detect tags from content keywords."""
@@ -626,10 +568,11 @@ def auto_adjust_priority(conn, mem_id):
             conn.execute("UPDATE memories SET priority = ? WHERE id = ?", (suggested, mem_id))
 
 
-# ── Smart Ingest ──
+# ── Smart Ingest (v4 Feature #4) ──
 
 def smart_ingest(category, content, tags="", project=None, priority=0, related_to=None,
-                 expires_at=None, source="manual", topic_key=None):
+                 expires_at=None, source="manual", topic_key=None, derived_from=None,
+                 citations=None, reasoning=None):
     """
     Smart ingestion with 4-tier similarity handling:
     - SKIP: >85% (duplicate blocked)
@@ -721,9 +664,9 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
             # Insert new, mark old as superseded
             conn = get_db()
             cur = conn.execute(
-                """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key)
-                   VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)""",
-                (category, content, tags, project, priority, expires_at, source, topic_key)
+                """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning)
+                   VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?)""",
+                (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning)
             )
             new_id = cur.lastrowid
 
@@ -759,9 +702,9 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
     # CREATE: Normal insert
     conn = get_db()
     cur = conn.execute(
-        """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key)
-           VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)""",
-        (category, content, tags, project, priority, expires_at, source, topic_key)
+        """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning)
+           VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?)""",
+        (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning)
     )
     mem_id = cur.lastrowid
 
@@ -778,7 +721,7 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
     conn.commit()
     conn.close()
 
-    # Auto-link to graph entities
+    # Phase 3: Auto-link to graph entities
     auto_link_memory(mem_id, content)
 
     export_memory_md()
@@ -788,16 +731,17 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
 
 
 def add_memory(category, content, tags="", project=None, priority=0, related_to=None,
-               expires_at=None, source="manual", topic_key=None, skip_dedup=False):
+               expires_at=None, source="manual", topic_key=None, skip_dedup=False,
+               derived_from=None, citations=None, reasoning=None):
     """Legacy add_memory wrapper for backward compatibility."""
     if skip_dedup:
         # Old behavior: skip dedup entirely
         tags = auto_tag(content, tags)
         conn = get_db()
         cur = conn.execute(
-            """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key)
-               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)""",
-            (category, content, tags, project, priority, expires_at, source, topic_key)
+            """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning)
+               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?)""",
+            (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning)
         )
         mem_id = cur.lastrowid
         if related_to:
@@ -812,14 +756,14 @@ def add_memory(category, content, tags="", project=None, priority=0, related_to=
         conn.commit()
         conn.close()
 
-        # Auto-link to graph entities
+        # Phase 3: Auto-link to graph entities
         auto_link_memory(mem_id, content)
 
         export_memory_md()
         print(f"Added memory #{mem_id} [{category}]{' tags:' + tags if tags else ''}")
         return mem_id
     else:
-        return smart_ingest(category, content, tags, project, priority, related_to, expires_at, source, topic_key)
+        return smart_ingest(category, content, tags, project, priority, related_to, expires_at, source, topic_key, derived_from, citations, reasoning)
 
 
 def search_memories(query, mode="hybrid"):
@@ -1021,7 +965,7 @@ def get_related(mem_id):
     return rows
 
 
-# ── Conflict Detection ──
+# ── Conflict Detection (v4 Feature #3) ──
 
 def find_conflicts():
     """Find memories with 50-85% similarity (potential conflicts)."""
@@ -1147,7 +1091,7 @@ def supersede_memory(old_id, new_id):
     print(f"#{new_id} supersedes #{old_id} (deactivated #{old_id})")
 
 
-# ── Topic File Export ──
+# ── Topic File Export (v4 Feature #5) ──
 
 def export_topics():
     """Generate topic .md files per project."""
@@ -1218,14 +1162,14 @@ def export_topics():
     print(f"Topic files generated in {TOPICS_DIR}")
 
 
-# ── Decay & Expiry ──
+# ── Decay & Expiry (Upgrade #6: expiry added) ──
 
 def run_decay():
     conn = get_db()
     now = datetime.now()
     changes = {"stale": 0, "deprioritized": 0, "expired": 0}
 
-    # Expire items past their expiry date
+    # Expire items past their expiry date (Upgrade #6)
     cur = conn.execute("""
         UPDATE memories SET active = 0, stale = 0
         WHERE active = 1 AND expires_at IS NOT NULL AND expires_at < datetime('now')
@@ -1293,25 +1237,24 @@ def get_snapshots(limit=5):
     return rows
 
 
-# ── Auto-Snapshot from git/file changes ──
+# ── Upgrade #2: Auto-Snapshot from git/file changes ──
 
 def auto_snapshot():
     """Auto-generate session snapshot from recent git activity and file changes."""
     parts = []
     projects_touched = set()
 
-    # Check for configured project paths
-    for repo_path, project_name in PROJECT_PATHS.items():
-        repo_path_obj = Path(repo_path)
-        if not repo_path_obj.exists():
+    # Check git repos for recent changes
+    for repo_path, project_name in [    ]:
+        if not Path(repo_path).exists():
             continue
         try:
-            # Files modified since DB was updated
+            # Files modified in last 2 hours
             result = subprocess.run(
-                ["find", str(repo_path_obj), "-maxdepth", "4", "-name", "*.ts", "-o", "-name", "*.js",
+                ["find", repo_path, "-maxdepth", "4", "-name", "*.ts", "-o", "-name", "*.js",
                  "-o", "-name", "*.py", "-o", "-name", "*.tsx", "-o", "-name", "*.jsx",
                  "-newer", str(DB_PATH)],
-                capture_output=True, text=True, timeout=5, cwd=str(repo_path_obj)
+                capture_output=True, text=True, timeout=5, cwd=repo_path
             )
             changed = [f for f in result.stdout.strip().split("\n") if f and "node_modules" not in f and ".next" not in f]
             if changed:
@@ -1319,7 +1262,7 @@ def auto_snapshot():
                 # Summarize
                 dirs = set()
                 for f in changed[:20]:
-                    rel = os.path.relpath(f, str(repo_path_obj))
+                    rel = os.path.relpath(f, repo_path)
                     parts_list = rel.split("/")
                     if len(parts_list) > 1:
                         dirs.add(parts_list[0] + "/" + parts_list[1] if len(parts_list) > 2 else parts_list[0])
@@ -1327,16 +1270,14 @@ def auto_snapshot():
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    # Check for git commits in configured repos
-    for repo_path, project_name in PROJECT_PATHS.items():
-        repo_path_obj = Path(repo_path)
-        git_dir = repo_path_obj / ".git"
-        if not git_dir.exists():
+    # Check for git commits in last 2 hours
+    for repo_path, project_name in []:  # Configure via PROJECT_PATHS
+        if not Path(repo_path / Path(".git")).exists() if isinstance(repo_path, Path) else not Path(repo_path + "/.git").exists():
             continue
         try:
             result = subprocess.run(
                 ["git", "log", "--oneline", "--since=2 hours ago", "--no-merges"],
-                capture_output=True, text=True, timeout=5, cwd=str(repo_path_obj)
+                capture_output=True, text=True, timeout=5, cwd=repo_path
             )
             commits = result.stdout.strip().split("\n")
             commits = [c for c in commits if c]
@@ -1365,7 +1306,7 @@ def auto_snapshot():
     export_memory_md(project)
 
 
-# ── Error Capture ──
+# ── Upgrade #1: Error Capture ──
 
 def log_error(command, error_output, project=None):
     """Log a failed command as an error memory."""
@@ -1398,7 +1339,7 @@ def log_error(command, error_output, project=None):
     return add_memory("error", content, project=project, source="auto-hook", skip_dedup=True)
 
 
-# ── Import from Session Markdown ──
+# ── Upgrade #4: Import from Session Markdown ──
 
 def import_session_md(filepath):
     """Import memories from a session summary markdown file."""
@@ -1410,12 +1351,11 @@ def import_session_md(filepath):
     text = path.read_text()
     imported = 0
 
-    # Try to extract project name from title or content
+    # Extract project name from title
     project = None
-    for proj_name in PROJECT_PATHS.values():
-        if proj_name in text:
-            project = proj_name
-            break
+    # Auto-detect project from content keywords (customize for your projects)
+
+    # Example: if "YourProject" in text: project = "YourProject"
 
     # Parse sections
     current_section = ""
@@ -1464,7 +1404,7 @@ def detect_project(cwd=None):
     return None
 
 
-# ── Backup & Restore ──
+# ── Upgrade #7: Backup & Restore ──
 
 def backup_db():
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -1516,7 +1456,7 @@ def restore_db(backup_file):
     return True
 
 
-# ── Graph Intelligence ──
+# ── Phase 3: Graph Intelligence ──
 
 def graph_add_entity(name, entity_type, summary="", importance=3):
     """Add or update an entity. Returns entity id."""
@@ -1716,6 +1656,64 @@ def graph_delete_entity(name):
     return deleted > 0
 
 
+def graph_remove_relationship(from_name, to_name, relation_type=None):
+    """Remove a relationship."""
+    conn = get_db()
+
+    # Get entity IDs
+    from_id = conn.execute(
+        "SELECT id FROM graph_entities WHERE LOWER(name) = LOWER(?)",
+        (from_name,)
+    ).fetchone()
+    to_id = conn.execute(
+        "SELECT id FROM graph_entities WHERE LOWER(name) = LOWER(?)",
+        (to_name,)
+    ).fetchone()
+
+    if not from_id or not to_id:
+        conn.close()
+        return False
+
+    if relation_type:
+        result = conn.execute(
+            "DELETE FROM graph_relationships WHERE from_entity_id = ? AND to_entity_id = ? AND relation_type = ?",
+            (from_id[0], to_id[0], relation_type)
+        )
+    else:
+        result = conn.execute(
+            "DELETE FROM graph_relationships WHERE from_entity_id = ? AND to_entity_id = ?",
+            (from_id[0], to_id[0])
+        )
+
+    deleted = result.rowcount
+    conn.commit()
+    conn.close()
+    return deleted > 0
+
+
+def graph_remove_fact(entity_name, key):
+    """Remove a fact from an entity."""
+    conn = get_db()
+
+    entity = conn.execute(
+        "SELECT id FROM graph_entities WHERE LOWER(name) = LOWER(?)",
+        (entity_name,)
+    ).fetchone()
+
+    if not entity:
+        conn.close()
+        return False
+
+    result = conn.execute(
+        "DELETE FROM graph_facts WHERE entity_id = ? AND key = ?",
+        (entity[0], key)
+    )
+    deleted = result.rowcount
+    conn.commit()
+    conn.close()
+    return deleted > 0
+
+
 def graph_spread(start_entity_name, depth=2):
     """
     Spreading activation: starting from an entity, find connected entities
@@ -1866,6 +1864,83 @@ def graph_auto_link_all():
     return total_links, len(memories)
 
 
+def graph_import_openclaw():
+    """Import entities, relationships, and facts from OpenClaw's graph DB."""
+    openclaw_path = Path.home() / ".openclaw" / "memory-graph.db"
+
+    if not openclaw_path.exists():
+        print(f"OpenClaw graph DB not found at {openclaw_path}")
+        return
+
+    try:
+        source = sqlite3.connect(str(openclaw_path))
+        source.row_factory = sqlite3.Row
+
+        # Import entities
+        entities = source.execute("SELECT * FROM entities").fetchall()
+        entity_map = {}  # old_id -> new_id
+
+        for e in entities:
+            new_id = graph_add_entity(
+                e['name'],
+                e['type'],
+                e['summary'] or "",
+                e['importance'] or 3
+            )
+            entity_map[e['id']] = new_id
+
+        print(f"Imported {len(entities)} entities")
+
+        # Import relationships
+        relationships = source.execute("SELECT * FROM relationships").fetchall()
+        for r in relationships:
+            from_id = entity_map.get(r['from_entity_id'])
+            to_id = entity_map.get(r['to_entity_id'])
+
+            if from_id and to_id:
+                conn = get_db()
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO graph_relationships
+                           (from_entity_id, to_entity_id, relation_type, note)
+                           VALUES (?, ?, ?, ?)""",
+                        (from_id, to_id, r['relation_type'], r['note'] or "")
+                    )
+                    conn.commit()
+                    conn.close()
+                except sqlite3.Error:
+                    conn.close()
+
+        print(f"Imported {len(relationships)} relationships")
+
+        # Import facts
+        facts = source.execute("SELECT * FROM facts").fetchall()
+        imported_facts = 0
+        for f in facts:
+            entity_id = entity_map.get(f['entity_id'])
+            if entity_id:
+                conn = get_db()
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO graph_facts
+                           (entity_id, key, value, confidence, source)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (entity_id, f['key'], f['value'], f['confidence'] or 1.0, f['source'] or "")
+                    )
+                    conn.commit()
+                    conn.close()
+                    imported_facts += 1
+                except sqlite3.Error:
+                    conn.close()
+
+        print(f"Imported {imported_facts} facts")
+
+        source.close()
+
+    except sqlite3.Error as e:
+        print(f"Error importing from OpenClaw: {e}")
+
+
 def graph_stats():
     """Get graph statistics."""
     conn = get_db()
@@ -1898,10 +1973,10 @@ def export_memory_md(focus_project=None):
     lines = []
     lines.append("# Persistent Memory (Auto-Generated)")
     lines.append(f"_Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | "
-                 f"ai-memory-sqlite v{VERSION}_")
+                 f"v4: progressive disclosure, topic upserts, conflicts, smart ingest, topics export, budget cap_")
     lines.append("")
 
-    # Latest session snapshot (limit to 3 recent)
+    # Latest session snapshot (limit to 3 recent, auto-prune older)
     snaps = conn.execute("SELECT * FROM session_snapshots ORDER BY created_at DESC LIMIT 3").fetchall()
     if snaps:
         lines.append(f"## Last Session ({snaps[0]['created_at'][:16]})")
@@ -1970,28 +2045,80 @@ def export_memory_md(focus_project=None):
             lines.append(f"- {p['content']}")
         lines.append("")
 
-    # Errors & Learnings (limit based on budget)
+    # Errors & Learnings (limit to 5 if over budget)
     errors_limit = 10
     errors = conn.execute("""
         SELECT * FROM memories WHERE active = 1 AND stale = 0 AND category IN ('error', 'learning')
         ORDER BY CASE WHEN project = ? THEN 0 ELSE 1 END, access_count DESC, updated_at DESC LIMIT ?
     """, (focus_project, errors_limit)).fetchall()
     if errors:
-        lines.append("## Recent Errors & Learnings")
+        lines.append("## Errors & Learnings")
         for e in errors:
             proj = f" [{e['project']}]" if e["project"] else ""
-            lines.append(f"- [{e['category']}] {e['content']}{proj}")
+            tag = f" ({e['tags']})" if e["tags"] else ""
+            acc = f" [x{e['access_count']}]" if e["access_count"] > 2 else ""
+            src = " [auto]" if e["source"] == "auto-hook" else ""
+            lines.append(f"- [{e['category']}] {e['content']}{proj}{tag}{acc}{src}")
         lines.append("")
 
-    # Check budget and truncate if needed
+    # Architecture (limit to 4 if over budget)
+    arch_limit = 8
+    arch = conn.execute("""
+        SELECT * FROM memories WHERE active = 1 AND category = 'architecture'
+        ORDER BY CASE WHEN project = ? THEN 0 ELSE 1 END, priority DESC LIMIT ?
+    """, (focus_project, arch_limit)).fetchall()
+    if arch:
+        lines.append("## Architecture")
+        for a in arch:
+            proj = f" [{a['project']}]" if a["project"] else ""
+            lines.append(f"- {a['content']}{proj}")
+        lines.append("")
+
+    # Workflow (limit to 3 if over budget)
+    workflow_limit = 6
+    workflow = conn.execute("""
+        SELECT * FROM memories WHERE active = 1 AND category = 'workflow'
+        ORDER BY CASE WHEN project = ? THEN 0 ELSE 1 END, priority DESC LIMIT ?
+    """, (focus_project, workflow_limit)).fetchall()
+    if workflow:
+        lines.append("## Workflow")
+        for w in workflow:
+            proj = f" [{w['project']}]" if w["project"] else ""
+            lines.append(f"- {w['content']}{proj}")
+        lines.append("")
+
+    # Stale/expired counts
+    stale_count = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND stale = 1").fetchone()["c"]
+    expired_count = conn.execute(
+        "SELECT COUNT(*) as c FROM memories WHERE active = 1 AND expires_at IS NOT NULL AND expires_at < datetime('now')"
+    ).fetchone()["c"]
+    notes = []
+    if stale_count:
+        notes.append(f"{stale_count} stale")
+    if expired_count:
+        notes.append(f"{expired_count} expired")
+    if notes:
+        lines.append(f"_{', '.join(notes)} memories hidden. Run `memory-tool stale` to review._")
+        lines.append("")
+
+    # Footer
+    total = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1").fetchone()["c"]
+    lines.append("---")
+    lines.append(f"_Total: {total} memories | Manage: `memory-tool help`_")
+
+    # Budget cap check (v4 Feature #6) - BEFORE closing connection
     content = "\n".join(lines)
     if len(content.encode('utf-8')) > MAX_MEMORY_MD_BYTES:
-        # Over budget, add budget message
-        lines.append("\n_[Over budget — run `memory-tool topics` for full view]_")
-        content = "\n".join(lines)
+        # Simplified approach: just truncate with warning
+        lines_text = "\n".join(lines)
+        max_chars = MAX_MEMORY_MD_BYTES - 100  # Leave room for warning
+        if len(lines_text) > max_chars:
+            lines_text = lines_text[:max_chars]
+            lines_text += "\n\n_[Over budget — run `memory-tool topics` for full view]_"
+        content = lines_text
 
-    MEMORY_MD_PATH.write_text(content)
     conn.close()
+    MEMORY_MD_PATH.write_text(content + "\n")
 
 
 # ── Garbage Collection ──
@@ -2117,12 +2244,18 @@ def format_row(row):
             rev = f" rev:{row['revision_count']}"
     except (KeyError, IndexError):
         pass
-    return (f"  #{row['id']} [{row['category']}]{proj}{tags}{acc}{stale}{exp}{src}{key}{rev}"
+    derived = ""
+    try:
+        if row["derived_from"]:
+            derived = f" derived:{row['derived_from']}"
+    except (KeyError, IndexError, TypeError):
+        pass
+    return (f"  #{row['id']} [{row['category']}]{proj}{tags}{acc}{stale}{exp}{src}{key}{rev}{derived}"
             f" ({row['updated_at'][:10]})\n    {row['content']}")
 
 
 def format_row_compact(row):
-    """Compact format."""
+    """Compact format (v4 Feature #1)."""
     content_preview = row['content'][:100]
     if len(row['content']) > 100:
         content_preview += "..."
@@ -2132,7 +2265,7 @@ def format_row_compact(row):
 
 
 def print_memory_full(mem_id):
-    """Print full detail for a single memory."""
+    """Print full detail for a single memory (v4 Feature #1)."""
     mem = get_memory(mem_id)
     if not mem:
         print(f"Memory #{mem_id} not found.")
@@ -2167,6 +2300,23 @@ def print_memory_full(mem_id):
     except (KeyError, IndexError):
         pass
 
+    # Provenance fields
+    try:
+        if mem["derived_from"]:
+            print(f"Derived from: {mem['derived_from']}")
+    except (KeyError, IndexError, TypeError):
+        pass
+    try:
+        if mem["citations"]:
+            print(f"Citations: {mem['citations']}")
+    except (KeyError, IndexError, TypeError):
+        pass
+    try:
+        if mem["reasoning"]:
+            print(f"Reasoning: {mem['reasoning']}")
+    except (KeyError, IndexError, TypeError):
+        pass
+
     # Related memories
     related = get_related(mem_id)
     if related:
@@ -2180,42 +2330,572 @@ def print_help():
     print(__doc__)
 
 
-# ── OpenClaw Bridge (Optional) ──
+# ── Run Tracking System ──
 
-def check_openclaw_configured():
-    """Check if OpenClaw is configured and available."""
-    if not OPENCLAW_DIR or not OPENCLAW_DIR.exists():
-        print("OpenClaw not configured. Set OPENCLAW_DIR environment variable or configure in config.ini")
-        print(f"Default location: {Path.home() / '.openclaw/workspace/memory'}")
+def start_run(task, agent="claw", project=None, tags=""):
+    """Start a new run. Returns run ID."""
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO runs (task, agent, project, tags) VALUES (?, ?, ?, ?)",
+        (task, agent, project, tags)
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return run_id
+
+
+def add_run_step(run_id, step_description):
+    """Append a step to the run's steps array."""
+    conn = get_db()
+    
+    # Get current steps
+    row = conn.execute("SELECT steps FROM runs WHERE id = ?", (run_id,)).fetchone()
+    if not row:
+        conn.close()
         return False
+        
+    try:
+        steps = json.loads(row['steps'])
+    except (json.JSONDecodeError, TypeError):
+        steps = []
+    
+    # Append new step
+    steps.append(step_description)
+    
+    # Update in DB
+    conn.execute(
+        "UPDATE runs SET steps = ? WHERE id = ?",
+        (json.dumps(steps), run_id)
+    )
+    conn.commit()
+    conn.close()
     return True
+
+
+def complete_run(run_id, outcome):
+    """Mark a run as completed."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE runs SET status = 'completed', completed_at = datetime('now'), outcome = ? WHERE id = ?",
+        (outcome, run_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def fail_run(run_id, reason):
+    """Mark a run as failed."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE runs SET status = 'failed', completed_at = datetime('now'), outcome = ? WHERE id = ?",
+        (reason, run_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def cancel_run(run_id):
+    """Mark a run as cancelled."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE runs SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?",
+        (run_id,)
+    )
+    conn.commit()
+    conn.close()
+
+
+def list_runs(status=None, project=None, limit=10):
+    """List runs with optional filters."""
+    conn = get_db()
+    
+    query = "SELECT * FROM runs WHERE 1=1"
+    params = []
+    
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    
+    if project:
+        query += " AND project = ?"
+        params.append(project)
+    
+    query += " ORDER BY started_at DESC LIMIT ?"
+    params.append(limit)
+    
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
+
+
+def show_run(run_id):
+    """Show detailed information for a run."""
+    conn = get_db()
+    row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def format_duration(start_time, end_time=None):
+    """Format duration in human-readable format."""
+    if not start_time:
+        return "unknown"
+    
+    try:
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        if end_time:
+            end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+        else:
+            end_dt = datetime.now()
+        
+        delta = end_dt - start_dt
+        total_seconds = int(delta.total_seconds())
+        
+        if total_seconds < 60:
+            return f"{total_seconds}s"
+        elif total_seconds < 3600:
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            return f"{minutes}m {seconds}s"
+        else:
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            return f"{hours}h {minutes}m"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+# ── Phase 4: OpenClaw Bridge (Memory Sync) ──
+
+OPENCLAW_MEMORY_DIR = Path.home() / ".openclaw" / "workspace" / "memory"
+OPENCLAW_GRAPH_DB = Path.home() / ".openclaw" / "memory-graph.db"
+SYNC_STATE_FILE = MEMORY_DIR / ".sync-state.json"
+
+
+def load_sync_state():
+    """Load sync state (checksums) from JSON."""
+    if SYNC_STATE_FILE.exists():
+        try:
+            return json.loads(SYNC_STATE_FILE.read_text())
+        except:
+            return {}
+    return {}
+
+
+def save_sync_state(state):
+    """Save sync state to JSON."""
+    SYNC_STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def file_checksum(content):
+    """Generate MD5 checksum for content."""
+    return hashlib.md5(content.encode('utf-8')).hexdigest()
 
 
 def sync_to_openclaw():
     """Export memories and graph data to OpenClaw's workspace format."""
-    if not check_openclaw_configured():
+    if not OPENCLAW_MEMORY_DIR.exists():
+        print(f"OpenClaw memory directory not found: {OPENCLAW_MEMORY_DIR}")
         return
 
-    # Implementation would go here (same as original but using OPENCLAW_DIR)
-    print("OpenClaw sync-to functionality requires OpenClaw workspace to be configured.")
-    print(f"Expected location: {OPENCLAW_DIR}")
+    conn = get_db()
+    state = load_sync_state()
+    files_written = []
+
+    # 1. Export claude-code-bridge.md (session handoff)
+    bridge_path = OPENCLAW_MEMORY_DIR / "claude-code-bridge.md"
+
+    # Get recent changes
+    recent_mems = conn.execute("""
+        SELECT * FROM memories
+        WHERE active = 1 AND updated_at >= datetime('now', '-24 hours')
+        ORDER BY updated_at DESC LIMIT 20
+    """).fetchall()
+
+    recent_snaps = conn.execute("""
+        SELECT * FROM session_snapshots
+        ORDER BY created_at DESC LIMIT 3
+    """).fetchall()
+
+    # Get pending items
+    pending = conn.execute("""
+        SELECT * FROM memories
+        WHERE active = 1 AND category = 'pending'
+        ORDER BY priority DESC, created_at DESC LIMIT 15
+    """).fetchall()
+
+    # Get recent decisions
+    decisions = conn.execute("""
+        SELECT * FROM memories
+        WHERE active = 1 AND category = 'decision'
+        ORDER BY updated_at DESC LIMIT 10
+    """).fetchall()
+
+    # Build bridge content
+    bridge_lines = []
+    bridge_lines.append("# Claude Code Memory Bridge")
+    bridge_lines.append(f"_Last sync: {datetime.now().strftime('%Y-%m-%d %H:%M')}_")
+    bridge_lines.append("")
+
+    # Active context from recent snapshots
+    if recent_snaps:
+        bridge_lines.append("## Active Context")
+        for snap in recent_snaps[:2]:
+            bridge_lines.append(f"- **{snap['created_at'][:16]}**: {snap['summary']}")
+            if snap['project']:
+                bridge_lines.append(f"  - Project: {snap['project']}")
+        bridge_lines.append("")
+
+    # Recent changes
+    if recent_mems:
+        bridge_lines.append("## Recent Changes (Last 24h)")
+        for mem in recent_mems[:10]:
+            cat = mem['category']
+            proj = f" [{mem['project']}]" if mem['project'] else ""
+            bridge_lines.append(f"- [{cat}] {mem['content'][:120]}{proj}")
+        bridge_lines.append("")
+
+    # Key decisions
+    if decisions:
+        bridge_lines.append("## Key Decisions")
+        for dec in decisions:
+            proj = f" [{dec['project']}]" if dec['project'] else ""
+            bridge_lines.append(f"- {dec['content']}{proj}")
+        bridge_lines.append("")
+
+    # Pending items
+    if pending:
+        bridge_lines.append("## Pending Items")
+        for p in pending:
+            proj = f" [{p['project']}]" if p['project'] else ""
+            exp = ""
+            if p['expires_at']:
+                exp_date = p['expires_at'][:10]
+                if p['expires_at'] < datetime.now().isoformat():
+                    exp = " (EXPIRED)"
+                else:
+                    exp = f" (due {exp_date})"
+            bridge_lines.append(f"- [ ] {p['content']}{proj}{exp}")
+        bridge_lines.append("")
+
+    # Graph summary
+    g_stats = graph_stats()
+    bridge_lines.append("## Shared Graph")
+    bridge_lines.append(f"- Entities: {g_stats['entities']} | Relationships: {g_stats['relationships']} | Facts: {g_stats['facts']}")
+    if g_stats['by_type']:
+        bridge_lines.append(f"- Entity types: " + ", ".join([f"{t['type']}({t['count']})" for t in g_stats['by_type']]))
+    bridge_lines.append("")
+
+    # Memory stats
+    total = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1").fetchone()['c']
+    stale = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND stale = 1").fetchone()['c']
+    bridge_lines.append("## Memory Stats")
+    bridge_lines.append(f"- Total active: {total} | Stale: {stale}")
+    bridge_lines.append(f"- Source: `{DB_PATH}`")
+    bridge_lines.append("")
+
+    bridge_content = "\n".join(bridge_lines)
+
+    # Write if changed
+    old_checksum = state.get('bridge_checksum', '')
+    new_checksum = file_checksum(bridge_content)
+    if old_checksum != new_checksum:
+        bridge_path.write_text(bridge_content)
+        state['bridge_checksum'] = new_checksum
+        state['last_sync'] = datetime.now().isoformat()
+        files_written.append(str(bridge_path))
+
+    # 2. Export graph-sync.md (graph data in human-readable format)
+    graph_path = OPENCLAW_MEMORY_DIR / "graph-sync.md"
+
+    entities = conn.execute("""
+        SELECT * FROM graph_entities
+        ORDER BY importance DESC, updated_at DESC
+    """).fetchall()
+
+    graph_lines = []
+    graph_lines.append("# Claude Code Graph Export")
+    graph_lines.append(f"_Last sync: {datetime.now().strftime('%Y-%m-%d %H:%M')}_")
+    graph_lines.append("")
+    graph_lines.append(f"Total: {g_stats['entities']} entities, {g_stats['relationships']} relationships, {g_stats['facts']} facts")
+    graph_lines.append("")
+
+    # Group entities by type
+    for entity_type in ['project', 'person', 'org', 'feature', 'tool', 'service', 'concept']:
+        type_entities = [e for e in entities if e['type'] == entity_type]
+        if type_entities:
+            graph_lines.append(f"## {entity_type.title()}s")
+            for e in type_entities:
+                graph_lines.append(f"### {e['name']}")
+                if e['summary']:
+                    graph_lines.append(f"{e['summary']}")
+                graph_lines.append(f"_Importance: {e['importance']}, Updated: {e['updated_at'][:16]}_")
+
+                # Facts
+                facts = conn.execute(
+                    "SELECT * FROM graph_facts WHERE entity_id = ? ORDER BY key",
+                    (e['id'],)
+                ).fetchall()
+                if facts:
+                    graph_lines.append("**Facts:**")
+                    for f in facts:
+                        conf = f" (confidence: {f['confidence']})" if f['confidence'] < 1.0 else ""
+                        graph_lines.append(f"- {f['key']}: {f['value']}{conf}")
+
+                # Relationships
+                rels_out = conn.execute("""
+                    SELECT r.relation_type, r.note, e2.name, e2.type
+                    FROM graph_relationships r
+                    JOIN graph_entities e2 ON r.to_entity_id = e2.id
+                    WHERE r.from_entity_id = ?
+                """, (e['id'],)).fetchall()
+
+                rels_in = conn.execute("""
+                    SELECT r.relation_type, r.note, e1.name, e1.type
+                    FROM graph_relationships r
+                    JOIN graph_entities e1 ON r.from_entity_id = e1.id
+                    WHERE r.to_entity_id = ?
+                """, (e['id'],)).fetchall()
+
+                if rels_out:
+                    graph_lines.append("**Relationships (outgoing):**")
+                    for r in rels_out:
+                        note = f" - {r['note']}" if r['note'] else ""
+                        graph_lines.append(f"- --{r['relation_type']}--> {r['name']} ({r['type']}){note}")
+
+                if rels_in:
+                    graph_lines.append("**Relationships (incoming):**")
+                    for r in rels_in:
+                        note = f" - {r['note']}" if r['note'] else ""
+                        graph_lines.append(f"- <--{r['relation_type']}-- {r['name']} ({r['type']}){note}")
+
+                graph_lines.append("")
+
+    graph_content = "\n".join(graph_lines)
+
+    # Write if changed
+    old_checksum = state.get('graph_checksum', '')
+    new_checksum = file_checksum(graph_content)
+    if old_checksum != new_checksum:
+        graph_path.write_text(graph_content)
+        state['graph_checksum'] = new_checksum
+        files_written.append(str(graph_path))
+
+    # 3. Sync graph DB to OpenClaw's graph DB
+    if OPENCLAW_GRAPH_DB.exists():
+        try:
+            graph_sync_to_openclaw_db()
+            files_written.append(str(OPENCLAW_GRAPH_DB))
+        except Exception as e:
+            print(f"Warning: Graph DB sync failed: {e}")
+
+    # Save state
+    save_sync_state(state)
+    conn.close()
+
+    if files_written:
+        print(f"Synced {len(files_written)} files to OpenClaw:")
+        for f in files_written:
+            print(f"  - {f}")
+    else:
+        print("No changes to sync (all files up to date)")
+
+
+def graph_sync_to_openclaw_db():
+    """Sync graph entities/relationships/facts to OpenClaw's graph DB."""
+    if not OPENCLAW_GRAPH_DB.exists():
+        print("OpenClaw graph DB not found, skipping DB sync")
+        return
+
+    source_conn = get_db()
+    target_conn = sqlite3.connect(str(OPENCLAW_GRAPH_DB))
+    target_conn.row_factory = sqlite3.Row
+
+    # Ensure OpenClaw DB has the same schema
+    target_conn.executescript("""
+        CREATE TABLE IF NOT EXISTS entities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            type TEXT NOT NULL,
+            summary TEXT DEFAULT '',
+            importance INTEGER DEFAULT 3,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS relationships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_entity_id INTEGER NOT NULL,
+            to_entity_id INTEGER NOT NULL,
+            relation_type TEXT NOT NULL,
+            note TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(from_entity_id, to_entity_id, relation_type)
+        );
+
+        CREATE TABLE IF NOT EXISTS facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            confidence REAL DEFAULT 1.0,
+            source TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(entity_id, key)
+        );
+
+        CREATE TABLE IF NOT EXISTS fact_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            old_value TEXT NOT NULL,
+            new_value TEXT NOT NULL,
+            changed_at TEXT DEFAULT (datetime('now'))
+        );
+    """)
+    target_conn.commit()
+
+    # Map entity names to IDs in both DBs
+    entity_map = {}  # source_id -> target_id
+
+    # Sync entities
+    source_entities = source_conn.execute("SELECT * FROM graph_entities").fetchall()
+    for e in source_entities:
+        # Map entity types to OpenClaw's supported types
+        entity_type = e['type']
+        if entity_type not in ('person', 'project', 'org', 'feature', 'concept'):
+            # Map 'tool' and 'service' to 'concept'
+            entity_type = 'concept'
+
+        # Check if entity exists in target
+        existing = target_conn.execute(
+            "SELECT id FROM entities WHERE name = ?", (e['name'],)
+        ).fetchone()
+
+        if existing:
+            # Update existing
+            target_conn.execute("""
+                UPDATE entities SET type = ?, summary = ?, importance = ?, updated_at = ?
+                WHERE name = ?
+            """, (entity_type, e['summary'], e['importance'], e['updated_at'], e['name']))
+            entity_map[e['id']] = existing['id']
+        else:
+            # Insert new
+            cursor = target_conn.execute("""
+                INSERT INTO entities (name, type, summary, importance, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (e['name'], entity_type, e['summary'], e['importance'], e['created_at'], e['updated_at']))
+            entity_map[e['id']] = cursor.lastrowid
+
+    target_conn.commit()
+
+    # Sync relationships
+    source_rels = source_conn.execute("SELECT * FROM graph_relationships").fetchall()
+    for r in source_rels:
+        from_id = entity_map.get(r['from_entity_id'])
+        to_id = entity_map.get(r['to_entity_id'])
+
+        if from_id and to_id:
+            try:
+                target_conn.execute("""
+                    INSERT OR REPLACE INTO relationships
+                    (from_entity_id, to_entity_id, relation_type, note, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (from_id, to_id, r['relation_type'], r['note'], r['created_at']))
+            except sqlite3.Error:
+                pass
+
+    target_conn.commit()
+
+    # Sync facts
+    source_facts = source_conn.execute("SELECT * FROM graph_facts").fetchall()
+    for f in source_facts:
+        entity_id = entity_map.get(f['entity_id'])
+        if entity_id:
+            # Check if fact exists
+            existing = target_conn.execute(
+                "SELECT value FROM facts WHERE entity_id = ? AND key = ?",
+                (entity_id, f['key'])
+            ).fetchone()
+
+            if existing and existing['value'] != f['value']:
+                # Record history
+                target_conn.execute("""
+                    INSERT INTO fact_history (entity_id, key, old_value, new_value)
+                    VALUES (?, ?, ?, ?)
+                """, (entity_id, f['key'], existing['value'], f['value']))
+
+            # Upsert fact
+            target_conn.execute("""
+                INSERT OR REPLACE INTO facts
+                (entity_id, key, value, confidence, source, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (entity_id, f['key'], f['value'], f['confidence'], f['source'],
+                  f['created_at'], f['updated_at']))
+
+    target_conn.commit()
+    target_conn.close()
+    source_conn.close()
 
 
 def sync_from_openclaw():
     """Import new memories from OpenClaw's daily notes and topic files."""
-    if not check_openclaw_configured():
+    if not OPENCLAW_MEMORY_DIR.exists():
+        print(f"OpenClaw memory directory not found: {OPENCLAW_MEMORY_DIR}")
         return
 
-    # Implementation would go here (same as original but using OPENCLAW_DIR)
-    print("OpenClaw sync-from functionality requires OpenClaw workspace to be configured.")
-    print(f"Expected location: {OPENCLAW_DIR}")
+    imported_count = 0
+
+    # Read today's daily note
+    today = datetime.now().strftime("%Y-%m-%d")
+    daily_path = OPENCLAW_MEMORY_DIR / f"{today}.md"
+
+    if daily_path.exists():
+        content = daily_path.read_text()
+
+        # Simple pattern matching for structured entries
+        # Look for patterns like "## [Category]" or "**Decision:**" etc.
+
+        # Example: extract decision-like statements
+        for line in content.split('\n'):
+            line = line.strip()
+
+            # Look for decision markers
+            if line.startswith('**Decision:**') or line.startswith('**Recommendation:**'):
+                decision = line.split(':', 1)[1].strip()
+                if decision and len(decision) > 20:
+                    # Check if similar memory exists
+                    similar = find_similar(decision, category='decision', threshold=0.75)
+                    if not similar:
+                        add_memory('decision', decision, project='OpenClaw', source='openclaw-import')
+                        imported_count += 1
+
+            # Look for todo items
+            elif line.startswith('- [ ]'):
+                todo = line[5:].strip()
+                if todo and len(todo) > 15:
+                    similar = find_similar(todo, category='pending', threshold=0.75)
+                    if not similar:
+                        add_memory('pending', todo, project='OpenClaw', source='openclaw-import')
+                        imported_count += 1
+
+    # Import from OpenClaw's graph DB
+    if OPENCLAW_GRAPH_DB.exists():
+        try:
+            graph_import_openclaw()
+        except Exception as e:
+            print(f"Warning: Failed to import from OpenClaw graph DB: {e}")
+
+    if imported_count > 0:
+        print(f"Imported {imported_count} new memories from OpenClaw")
+    else:
+        print("No new memories to import from OpenClaw")
 
 
 def sync_bidirectional():
     """Run both sync-to and sync-from."""
-    if not check_openclaw_configured():
-        return
-
     print("=== Syncing to OpenClaw ===")
     sync_to_openclaw()
     print("\n=== Syncing from OpenClaw ===")
@@ -2223,237 +2903,251 @@ def sync_bidirectional():
     print("\n=== Sync complete ===")
 
 
+def suggest_next():
+    """Suggest next actions based on current memory state."""
+    conn = get_db()
+    suggestions = []
+
+    # 1. Expiring soon (within 7 days)
+    expiring = conn.execute("""
+        SELECT COUNT(*) as c FROM memories
+        WHERE active = 1 AND expires_at IS NOT NULL
+        AND expires_at > datetime('now') AND expires_at < datetime('now', '+7 days')
+    """).fetchone()["c"]
+    if expiring:
+        suggestions.append(f"⏰ {expiring} memories expiring within 7 days — run: memory-tool list --expired")
+
+    # 2. Stale memories
+    stale = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND stale = 1").fetchone()["c"]
+    if stale:
+        suggestions.append(f"🕸️ {stale} stale memories need review — run: memory-tool stale")
+
+    # 3. Pending items
+    pending = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND category = 'pending'").fetchone()["c"]
+    if pending:
+        suggestions.append(f"📋 {pending} pending items to complete or clean up — run: memory-tool pending")
+
+    # 4. Conflicts (close connection first to avoid interference with find_conflicts)
+    conn.close()
+    conflicts = find_conflicts()
+    if conflicts:
+        suggestions.append(f"⚠️ {len(conflicts)} potential duplicate memories — run: memory-tool conflicts")
+
+    # Re-open connection for remaining checks
+    conn = get_db()
+
+    # 5. Unembedded memories (vector index gaps)
+    if has_vec_support():
+        try:
+            active = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1").fetchone()["c"]
+            embedded = conn.execute("SELECT COUNT(*) as c FROM memory_vec").fetchone()["c"]
+            gap = active - embedded
+            if gap > 5:
+                suggestions.append(f"🔍 {gap} memories not indexed for semantic search — run: memory-tool reindex")
+        except:
+            pass
+
+    # 6. Orphan memories (no tags, no project, no relations)
+    orphans = conn.execute("""
+        SELECT COUNT(*) as c FROM memories m
+        WHERE m.active = 1 AND (m.tags = '' OR m.tags IS NULL)
+        AND m.project IS NULL
+        AND m.id NOT IN (SELECT source_id FROM memory_relations UNION SELECT target_id FROM memory_relations)
+    """).fetchone()["c"]
+    if orphans:
+        suggestions.append(f"🏷️ {orphans} orphan memories (no tags/project/relations) — consider tagging")
+
+    # 7. Running runs that might be stale
+    try:
+        stale_runs = conn.execute("""
+            SELECT COUNT(*) as c FROM runs
+            WHERE status = 'running' AND started_at < datetime('now', '-24 hours')
+        """).fetchone()["c"]
+        if stale_runs:
+            suggestions.append(f"🏃 {stale_runs} runs still 'running' for 24h+ — run: memory-tool run list --status running")
+    except:
+        pass  # runs table might not exist in older versions
+
+    # 8. Backup age
+    if BACKUP_DIR.exists():
+        backups = sorted(BACKUP_DIR.glob("memories_*.db"))
+        if backups:
+            newest = backups[-1].stat().st_mtime
+            days_ago = (datetime.now().timestamp() - newest) / 86400
+            if days_ago > 7:
+                suggestions.append(f"💾 Last backup was {int(days_ago)} days ago — run: memory-tool backup")
+        else:
+            suggestions.append("💾 No backups found — run: memory-tool backup")
+    else:
+        suggestions.append("💾 No backups found — run: memory-tool backup")
+
+    # 9. Unlinked graph entities
+    try:
+        unlinked = conn.execute("""
+            SELECT COUNT(*) as c FROM graph_entities ge
+            WHERE ge.id NOT IN (SELECT entity_id FROM memory_entity_links)
+        """).fetchone()["c"]
+        if unlinked:
+            suggestions.append(f"🔗 {unlinked} graph entities not linked to any memories — run: memory-tool graph auto-link")
+    except:
+        pass  # graph tables might not exist
+
+    conn.close()
+
+    if suggestions:
+        print("Next actions suggested:\n")
+        for s in suggestions:
+            print(f"  {s}")
+        print(f"\n({len(suggestions)} suggestions)")
+    else:
+        print("✅ Everything looks good! No actions needed.")
+
+
 # ── CLI ──
 
 def parse_flags(argv, start=2):
     """Parse --key value flags from argv starting at index."""
     flags = {}
-    content_parts = []
     i = start
+    content_parts = []
     while i < len(argv):
-        arg = argv[i]
-        if arg.startswith("--"):
-            key = arg[2:]
-            if i + 1 < len(argv) and not argv[i+1].startswith("--"):
-                flags[key] = argv[i+1]
-                i += 2
-            else:
-                flags[key] = True
-                i += 1
+        if argv[i].startswith("--") and i + 1 < len(argv):
+            key = argv[i][2:]
+            flags[key] = argv[i + 1]
+            i += 2
+        elif argv[i].startswith("--"):
+            # Boolean flag
+            flags[argv[i][2:]] = True
+            i += 1
         else:
-            content_parts.append(arg)
+            content_parts.append(argv[i])
             i += 1
     return flags, content_parts
 
 
-def init_memory_system():
-    """Initialize the memory system with database and sample config files."""
-    print("Initializing AI Memory SQLite...")
-
-    # Create directories
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    TOPICS_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Initialize database
-    init_db()
-    print(f"Created database: {DB_PATH}")
-
-    # Create sample config.ini if it doesn't exist
-    if not CONFIG_FILE.exists():
-        sample_config = """[paths]
-# Uncomment and modify as needed
-# backup_dir = /custom/backup/path
-# openclaw_dir = /path/to/openclaw/workspace/memory
-
-[projects]
-# Add your projects here: path = ProjectName
-# /home/user/myapp = MyApp
-# /home/user/work/api = WorkAPI
-
-[auto_tags]
-# Add custom auto-tagging rules: tag = keyword1, keyword2, keyword3
-# django = django, manage.py, settings.py
-# flutter = flutter, dart, pubspec.yaml
-"""
-        CONFIG_FILE.write_text(sample_config)
-        print(f"Created sample config: {CONFIG_FILE}")
-
-    # Create sample projects.conf if it doesn't exist
-    if not PROJECTS_CONFIG.exists():
-        sample_projects = """# Project path mappings (one per line)
-# Format: /path/to/project = ProjectName
-# Example:
-# /home/user/my-api = MyAPI
-# /home/user/frontend = MyFrontend
-"""
-        PROJECTS_CONFIG.write_text(sample_projects)
-        print(f"Created sample projects config: {PROJECTS_CONFIG}")
-
-    # Create initial MEMORY.md
-    export_memory_md()
-    print(f"Created MEMORY.md: {MEMORY_MD_PATH}")
-
-    print("\nInitialization complete!")
-    print("\nNext steps:")
-    print(f"1. Edit {PROJECTS_CONFIG} to add your project paths")
-    print(f"2. (Optional) Edit {CONFIG_FILE} for advanced configuration")
-    print("3. Start adding memories: memory-tool add project 'My first project' --project MyProject")
-    print("\nFor help: memory-tool --help")
-
-
 def main():
+    init_db()
+
     if len(sys.argv) < 2:
         print_help()
-        sys.exit(1)
+        sys.exit(0)
 
     cmd = sys.argv[1]
 
-    # Special commands that don't require DB
-    if cmd in ("--version", "-v"):
-        print(f"ai-memory-sqlite v{VERSION}")
-        return
-
-    if cmd == "--init":
-        init_memory_system()
-        return
-
-    if cmd in ("help", "--help", "-h"):
-        print_help()
-        return
-
-    # All other commands require initialized DB
-    if not DB_PATH.exists():
-        print("Memory system not initialized. Run: memory-tool --init")
-        sys.exit(1)
-
     if cmd == "add" and len(sys.argv) >= 4:
         category = sys.argv[2]
-        flags, content_parts = parse_flags(sys.argv, 3)
-        content = " ".join(content_parts)
-
-        project = flags.get("project") or detect_project()
-        tags = flags.get("tags", "")
-        priority = int(flags.get("priority", 0))
-        related = flags.get("related")
-        expires = flags.get("expires")
-        topic_key = flags.get("key")
-
-        add_memory(category, content, tags, project, priority, related, expires, topic_key=topic_key)
+        content = sys.argv[3]
+        flags, _ = parse_flags(sys.argv, 4)
+        add_memory(
+            category, content,
+            tags=flags.get("tags", ""),
+            project=flags.get("project"),
+            priority=int(flags.get("priority", 0)),
+            related_to=flags.get("related"),
+            expires_at=flags.get("expires"),
+            source=flags.get("source", "manual"),
+            topic_key=flags.get("key"),
+            derived_from=flags.get("derived-from"),
+            citations=flags.get("citations"),
+            reasoning=flags.get("reasoning"),
+        )
 
     elif cmd == "search" and len(sys.argv) >= 3:
-        flags, content_parts = parse_flags(sys.argv, 2)
-        query = " ".join(content_parts) if content_parts else " ".join(sys.argv[2:])
+        flags, query_parts = parse_flags(sys.argv, 2)
+        query = " ".join(query_parts)
 
         # Determine search mode
-        mode = "hybrid"
+        search_mode = "hybrid"  # default
         if flags.get("semantic"):
-            mode = "semantic"
+            search_mode = "semantic"
         elif flags.get("keyword"):
-            mode = "keyword"
+            search_mode = "keyword"
 
-        rows = search_memories(query, mode)
+        rows = search_memories(query, mode=search_mode)
         if rows:
-            show_full = flags.get("full", False)
+            full_mode = flags.get("full", False)
             for r in rows:
-                if show_full:
+                if full_mode:
                     print(format_row(r))
                 else:
                     print(format_row_compact(r))
-                # Show related if exists
-                related = get_related(r["id"])
-                if related and show_full:
-                    for rel in related:
-                        print(f"    -> #{rel['id']} ({rel['relation_type']}): {rel['content'][:60]}...")
-            print(f"\n({len(rows)} results)")
+                # Related in compact mode too
+                if not full_mode:
+                    for rel in get_related(r["id"]):
+                        print(f"  -> #{rel['id']}: {rel['content'][:60]}")
+                else:
+                    for rel in get_related(r["id"]):
+                        print(f"      -> #{rel['id']} ({rel['relation_type']}): {rel['content'][:80]}")
         else:
-            print("No results found.")
+            print("No memories found.")
 
     elif cmd == "get" and len(sys.argv) >= 3:
-        mem_id = int(sys.argv[2])
-        print_memory_full(mem_id)
+        print_memory_full(int(sys.argv[2]))
 
     elif cmd == "list":
         flags, _ = parse_flags(sys.argv, 2)
-        category = flags.get("category")
-        project = flags.get("project")
-        tag = flags.get("tag")
-        stale_only = flags.get("stale", False)
-        expired_only = flags.get("expired", False)
-
-        rows = list_memories(category, project, tag, stale_only, expired_only)
+        rows = list_memories(
+            category=flags.get("category"),
+            project=flags.get("project"),
+            tag=flags.get("tag"),
+            stale_only="stale" in sys.argv,
+            expired_only="--expired" in sys.argv,
+        )
         for r in rows:
             print(format_row(r))
         print(f"\n({len(rows)} memories)")
 
     elif cmd == "update" and len(sys.argv) >= 4:
-        mem_id = int(sys.argv[2])
-        content = " ".join(sys.argv[3:])
-        update_memory(mem_id, content)
+        update_memory(int(sys.argv[2]), " ".join(sys.argv[3:]))
 
     elif cmd == "delete" and len(sys.argv) >= 3:
-        mem_id = int(sys.argv[2])
-        delete_memory(mem_id)
+        delete_memory(int(sys.argv[2]))
 
     elif cmd == "tag" and len(sys.argv) >= 4:
-        mem_id = int(sys.argv[2])
-        tags = sys.argv[3]
-        tag_memory(mem_id, tags)
+        tag_memory(int(sys.argv[2]), sys.argv[3])
 
     elif cmd == "relate" and len(sys.argv) >= 4:
-        id1 = int(sys.argv[2])
-        id2 = int(sys.argv[3])
-        rel_type = sys.argv[4] if len(sys.argv) >= 5 else "related"
-        relate_memories(id1, id2, rel_type)
+        rel_type = sys.argv[4] if len(sys.argv) > 4 else "related"
+        relate_memories(int(sys.argv[2]), int(sys.argv[3]), rel_type)
 
     elif cmd == "conflicts":
         conflicts = find_conflicts()
         if conflicts:
-            print("Potential conflicts found:\n")
+            print(f"Potential conflicts ({len(conflicts)} found):\n")
             for c in conflicts:
-                print(f"[{c['score']:.0%} similarity] #{c['id1']} vs #{c['id2']} ({c['category']}, {c['project']})")
-                print(f"  1: {c['content1'][:100]}")
-                print(f"  2: {c['content2'][:100]}")
-                print()
-            print(f"Total: {len(conflicts)} conflicts")
-            print("\nActions: memory-tool merge <id1> <id2> | memory-tool supersede <old> <new>")
+                suggest = "MERGE" if c["score"] > 0.70 else "REVIEW"
+                print(f"  #{c['id1']} vs #{c['id2']} ({c['score']:.0%} similar) [{c['project']}/{c['category']}]")
+                print(f"    A: {c['content1'][:80]}...")
+                print(f"    B: {c['content2'][:80]}...")
+                print(f"    Suggest: {suggest} (memory-tool merge {c['id1']} {c['id2']})\n")
         else:
             print("No conflicts found.")
 
     elif cmd == "merge" and len(sys.argv) >= 4:
-        id1 = int(sys.argv[2])
-        id2 = int(sys.argv[3])
-        merge_memories(id1, id2)
+        merge_memories(int(sys.argv[2]), int(sys.argv[3]))
 
     elif cmd == "supersede" and len(sys.argv) >= 4:
-        old_id = int(sys.argv[2])
-        new_id = int(sys.argv[3])
-        supersede_memory(old_id, new_id)
+        supersede_memory(int(sys.argv[2]), int(sys.argv[3]))
 
     elif cmd == "pending":
-        pending = list_memories(category="pending")
-        if pending:
-            for p in pending:
-                print(format_row(p))
-            print(f"\n({len(pending)} pending items)")
-        else:
-            print("No pending items.")
+        rows = list_memories(category="pending")
+        for r in rows:
+            print(format_row(r))
+        print(f"\n({len(rows)} pending items)")
 
     elif cmd == "projects":
         conn = get_db()
-        projects = conn.execute(
-            "SELECT DISTINCT project FROM memories WHERE active = 1 AND project IS NOT NULL ORDER BY project"
-        ).fetchall()
-
-        for proj in projects:
-            p = proj["project"]
-            count = conn.execute(
-                "SELECT COUNT(*) as c FROM memories WHERE active = 1 AND project = ?",
-                (p,)
-            ).fetchone()["c"]
-            print(f"{p}: {count} memories")
-
+        projects = conn.execute("""
+            SELECT project, COUNT(*) as count,
+                   GROUP_CONCAT(DISTINCT category) as categories,
+                   SUM(CASE WHEN category='pending' THEN 1 ELSE 0 END) as pending,
+                   SUM(CASE WHEN stale=1 THEN 1 ELSE 0 END) as stale
+            FROM memories WHERE active = 1 AND project IS NOT NULL
+            GROUP BY project ORDER BY count DESC
+        """).fetchall()
         conn.close()
+        for p in projects:
+            print(f"  {p['project']}: {p['count']} memories, {p['pending']} pending, {p['stale']} stale ({p['categories']})")
 
     elif cmd == "topics":
         export_topics()
@@ -2462,19 +3156,21 @@ def main():
         flags, _ = parse_flags(sys.argv, 2)
         project = flags.get("project") or detect_project()
         export_memory_md(project)
-        print(f"Exported MEMORY.md (focus: {project or 'None'})")
+        focus = f" (focused on {project})" if project else ""
+        print(f"Exported to {MEMORY_MD_PATH}{focus}")
 
     elif cmd == "stats":
         conn = get_db()
-        stats = {}
-        stats['total'] = conn.execute("SELECT COUNT(*) as c FROM memories").fetchone()["c"]
-        stats['active'] = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1").fetchone()["c"]
-        stats['stale'] = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND stale = 1").fetchone()["c"]
-        stats['expired'] = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND expires_at < datetime('now')").fetchone()["c"]
-        stats['projects'] = conn.execute("SELECT COUNT(DISTINCT project) as c FROM memories WHERE active = 1 AND project IS NOT NULL").fetchone()["c"]
-        stats['categories'] = conn.execute("SELECT COUNT(DISTINCT category) as c FROM memories WHERE active = 1").fetchone()["c"]
-        stats['total_accesses'] = conn.execute("SELECT SUM(access_count) as s FROM memories WHERE active = 1").fetchone()["s"]
-
+        stats = conn.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active,
+                   SUM(CASE WHEN stale = 1 AND active = 1 THEN 1 ELSE 0 END) as stale,
+                   SUM(CASE WHEN expires_at IS NOT NULL AND expires_at < datetime('now') AND active = 1 THEN 1 ELSE 0 END) as expired,
+                   COUNT(DISTINCT project) as projects,
+                   COUNT(DISTINCT category) as categories,
+                   SUM(access_count) as total_accesses
+            FROM memories
+        """).fetchone()
         cats = conn.execute("""
             SELECT category, COUNT(*) as count, SUM(access_count) as accesses
             FROM memories WHERE active = 1 GROUP BY category ORDER BY count DESC
@@ -2485,7 +3181,6 @@ def main():
             SELECT source, COUNT(*) as c FROM memories WHERE active = 1 GROUP BY source ORDER BY c DESC
         """).fetchall()
         topic_keys = conn.execute("SELECT COUNT(*) as c FROM memories WHERE topic_key IS NOT NULL AND active = 1").fetchone()["c"]
-
         # Backup info
         backup_count = len(list(BACKUP_DIR.glob("memories_*.db"))) if BACKUP_DIR.exists() else 0
 
@@ -2515,6 +3210,14 @@ def main():
             print(f"Vector index: {vec_indexed}/{stats['active']} embeddings ({vec_pct:.0f}%)")
         else:
             print("Vector index: Not available (install sqlite-vec, onnxruntime, tokenizers, numpy)")
+        # Bridge status
+        sync_state = load_sync_state()
+        if sync_state.get('last_sync'):
+            last_sync = sync_state['last_sync'][:16]
+            openclaw_files = len(list(OPENCLAW_MEMORY_DIR.glob("*.md"))) if OPENCLAW_MEMORY_DIR.exists() else 0
+            print(f"Bridge: last sync {last_sync}, {openclaw_files} OpenClaw files")
+        else:
+            print("Bridge: never synced (run 'memory-tool sync')")
 
         print("\nBy category:")
         for c in cats:
@@ -2704,6 +3407,9 @@ def main():
                 total_links, total_mems = graph_auto_link_all()
                 print(f"Auto-linked {total_links} connections across {total_mems} memories")
 
+            elif subcmd == "import-openclaw":
+                graph_import_openclaw()
+
             elif subcmd == "stats":
                 g_stats = graph_stats()
                 print(f"Graph Statistics:")
@@ -2729,6 +3435,7 @@ def main():
                 print("  memory-tool graph spread <name> [depth]")
                 print("  memory-tool graph link <memory_id> <entity_name>")
                 print("  memory-tool graph auto-link")
+                print("  memory-tool graph import-openclaw")
                 print("  memory-tool graph stats")
 
     elif cmd == "sync":
@@ -2739,6 +3446,139 @@ def main():
 
     elif cmd == "sync-from":
         sync_from_openclaw()
+
+    elif cmd == "run":
+        # Run tracking subcommands
+        if len(sys.argv) < 3:
+            print("Usage: memory-tool run <subcommand>")
+            print("Subcommands: start, step, complete, fail, list, show, cancel")
+            sys.exit(1)
+            
+        subcmd = sys.argv[2]
+        
+        if subcmd == "start" and len(sys.argv) >= 4:
+            task = sys.argv[3]
+            flags, _ = parse_flags(sys.argv, 4)
+            agent = flags.get("agent", "claw")
+            project = flags.get("project")
+            tags = flags.get("tags", "")
+            
+            run_id = start_run(task, agent, project, tags)
+            print(f"Started run #{run_id}")
+            
+        elif subcmd == "step" and len(sys.argv) >= 5:
+            try:
+                run_id = int(sys.argv[3])
+                step_description = " ".join(sys.argv[4:])
+                success = add_run_step(run_id, step_description)
+                if success:
+                    print(f"Added step to run #{run_id}")
+                else:
+                    print(f"Run #{run_id} not found")
+            except ValueError:
+                print("Invalid run ID")
+                
+        elif subcmd == "complete" and len(sys.argv) >= 5:
+            try:
+                run_id = int(sys.argv[3])
+                outcome = " ".join(sys.argv[4:])
+                complete_run(run_id, outcome)
+                print(f"Completed run #{run_id}")
+            except ValueError:
+                print("Invalid run ID")
+                
+        elif subcmd == "fail" and len(sys.argv) >= 5:
+            try:
+                run_id = int(sys.argv[3])
+                reason = " ".join(sys.argv[4:])
+                fail_run(run_id, reason)
+                print(f"Failed run #{run_id}")
+            except ValueError:
+                print("Invalid run ID")
+                
+        elif subcmd == "cancel" and len(sys.argv) >= 4:
+            try:
+                run_id = int(sys.argv[3])
+                cancel_run(run_id)
+                print(f"Cancelled run #{run_id}")
+            except ValueError:
+                print("Invalid run ID")
+                
+        elif subcmd == "list":
+            flags, _ = parse_flags(sys.argv, 3)
+            status = flags.get("status")
+            project = flags.get("project")
+            limit = int(flags.get("limit", 10))
+            
+            runs = list_runs(status, project, limit)
+            
+            if runs:
+                print(f"{'ID':<4} {'Task':<50} {'Agent':<8} {'Status':<12} {'Started':<16} {'Duration':<12}")
+                print("-" * 108)
+                for r in runs:
+                    task_preview = r['task'][:47] + "..." if len(r['task']) > 50 else r['task']
+                    duration = format_duration(r['started_at'], r['completed_at'])
+                    started_short = r['started_at'][:16] if r['started_at'] else "unknown"
+                    print(f"{r['id']:<4} {task_preview:<50} {r['agent']:<8} {r['status']:<12} {started_short:<16} {duration:<12}")
+                print(f"\n({len(runs)} runs)")
+            else:
+                print("No runs found")
+                
+        elif subcmd == "show" and len(sys.argv) >= 4:
+            try:
+                run_id = int(sys.argv[3])
+                run = show_run(run_id)
+                if run:
+                    print(f"\n=== Run #{run['id']} ===")
+                    print(f"Task: {run['task']}")
+                    print(f"Agent: {run['agent']}")
+                    print(f"Status: {run['status']}")
+                    print(f"Started: {run['started_at']}")
+                    if run['completed_at']:
+                        print(f"Completed: {run['completed_at']}")
+                        duration = format_duration(run['started_at'], run['completed_at'])
+                        print(f"Duration: {duration}")
+                    elif run['status'] == 'running':
+                        duration = format_duration(run['started_at'])
+                        print(f"Running for: {duration}")
+                    if run['project']:
+                        print(f"Project: {run['project']}")
+                    if run['tags']:
+                        print(f"Tags: {run['tags']}")
+                    if run['outcome']:
+                        print(f"Outcome: {run['outcome']}")
+                    
+                    # Parse and display steps
+                    try:
+                        steps = json.loads(run['steps'])
+                        if steps:
+                            print(f"\nSteps ({len(steps)}):")
+                            for i, step in enumerate(steps, 1):
+                                print(f"  {i}. {step}")
+                    except (json.JSONDecodeError, TypeError):
+                        if run['steps'] and run['steps'] != '[]':
+                            print(f"Steps: {run['steps']}")
+                    print()
+                else:
+                    print(f"Run #{run_id} not found")
+            except ValueError:
+                print("Invalid run ID")
+        else:
+            print(f"Unknown run subcommand: {subcmd}")
+            print("\nRun commands:")
+            print("  memory-tool run start \"task description\" [--agent claw|claude] [--project X] [--tags x,y]")
+            print("  memory-tool run step <id> \"step description\"")
+            print("  memory-tool run complete <id> \"outcome summary\"")
+            print("  memory-tool run fail <id> \"reason\"")
+            print("  memory-tool run list [--status running|completed|failed] [--project X] [--limit 10]")
+            print("  memory-tool run show <id>")
+            print("  memory-tool run cancel <id>")
+
+    elif cmd == "next":
+        suggest_next()
+
+    elif cmd in ("help", "--help", "-h"):
+        print_help()
 
     else:
         print(f"Unknown command: {cmd}")

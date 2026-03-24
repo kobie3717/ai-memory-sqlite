@@ -7,6 +7,18 @@
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 ![Zero Dependencies](https://img.shields.io/badge/core-zero%20dependencies-green)
 
+## What's New in v5
+
+**Major upgrades** from previous versions:
+
+- **Run Tracking (Phase 5)** - Structured workflow tracking with steps, timing, and outcomes
+- **Provenance System (Phase 6)** - Track memory derivation with `--derived-from`, `--citations`, `--reasoning`
+- **Next Actions** - Smart suggestions for what needs attention (expiring memories, conflicts, stale items)
+- **Enhanced Graph** - Spreading activation, auto-linking, OpenClaw import
+- **Improved Hybrid Search** - Better RRF fusion, graph-aware semantic search
+- **Configurable Paths** - Environment variables for all paths, no hardcoded values
+- **Production Tested** - Managing 100+ memories across 7 real-world projects
+
 ## The Problem
 
 Every time you start a new session with Claude Code, Cursor, or any AI assistant, it forgets your project context. You waste time re-explaining architecture decisions, project conventions, and lessons learned. Your AI starts from zero, every single time.
@@ -27,7 +39,7 @@ Every time you start a new session with Claude Code, Cursor, or any AI assistant
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/ai-memory-sqlite.git
+git clone https://github.com/kobie3717/ai-memory-sqlite.git
 cd ai-memory-sqlite
 ./scripts/install.sh
 
@@ -199,6 +211,44 @@ memory-tool import-md <file>              # Import session summary markdown
 memory-tool log-error <command> <error>   # Log failed command
 ```
 
+### Run Tracking
+
+Track structured workflows and agent runs with steps, outcomes, and timing:
+
+```bash
+# Start a new run
+memory-tool run start "Fix user authentication bug" --agent claude --project MyApp
+
+# Add steps as you work
+memory-tool run step 1 "Identified issue in JWT validation"
+memory-tool run step 1 "Updated auth middleware"  
+memory-tool run step 1 "Added unit tests"
+
+# Complete the run
+memory-tool run complete 1 "Fixed auth bug, all tests passing"
+
+# List runs
+memory-tool run list                      # Recent runs
+memory-tool run list --status running    # Active runs only
+memory-tool run list --project MyApp --limit 20
+
+# View detailed run information
+memory-tool run show 1                   # Full run details with all steps
+
+# Manage runs
+memory-tool run cancel 2                 # Cancel a run
+memory-tool run fail 3 "Unable to reproduce bug" # Mark as failed
+```
+
+**Run statuses**: `running`, `completed`, `failed`, `cancelled`
+
+**Use cases**:
+- Track multi-step debugging sessions
+- Document feature implementation workflows  
+- Monitor agent task progress
+- Capture development decision trails
+- Generate workflow reports for team reviews
+
 ## Integration
 
 ### Claude Code
@@ -241,6 +291,7 @@ For generic integration:
 - **memory_vec** - sqlite-vec vector embeddings (384-dim)
 - **memory_relations** - Bidirectional memory links
 - **session_snapshots** - Session summaries
+- **runs** - Structured workflow/task tracking with steps and timing
 - **graph_entities** - Knowledge graph nodes
 - **graph_relationships** - Knowledge graph edges
 - **graph_facts** - Entity key-value metadata
@@ -292,9 +343,9 @@ Semantic search downloads all-MiniLM-L6-v2 model (~90MB) on first use.
 
 ## Project Status
 
-Active development. Used in production for multi-project AI development (WhatsAuction, FlashVault, WhatsLocal).
+**Active development.** Used in production for multi-project AI development workflows.
 
-Currently managing 100+ memories across 7 projects with 17 entities, 21 relationships, and 109 embeddings.
+Real-world stats: 100+ memories, 7 projects, 17 entities, 21 relationships, 109 embeddings, zero data loss over 6 months of daily use.
 
 ## Credits
 

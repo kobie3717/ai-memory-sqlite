@@ -7,7 +7,7 @@ Complete installation instructions for ai-memory-sqlite.
 For Claude Code users on Linux/macOS:
 
 ```bash
-git clone https://github.com/yourusername/ai-memory-sqlite.git
+git clone https://github.com/kobie3717/ai-memory-sqlite.git
 cd ai-memory-sqlite
 ./scripts/install.sh
 ```
@@ -32,7 +32,7 @@ memory-tool search "test"
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/ai-memory-sqlite.git
+git clone https://github.com/kobie3717/ai-memory-sqlite.git
 cd ai-memory-sqlite
 ```
 
