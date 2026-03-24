@@ -35,6 +35,20 @@ Every time you start a new session with Claude Code, Cursor, or any AI assistant
 - **Cross-tool sync** - Share memory between Claude Code, OpenClaw, and other AI tools
 - **Zero config, single file** - No API keys, no cloud services, 100% local and private
 
+## How It Compares
+
+| Feature | ai-memory-sqlite | .claude/memory | Cursor Rules | Custom RAG |
+|---------|-----------------|----------------|--------------|------------|
+| Persists across sessions | ✅ | ✅ | ✅ | ✅ |
+| Semantic search | ✅ | ❌ | ❌ | ✅ |
+| Graph relationships | ✅ | ❌ | ❌ | ❌ |
+| Auto error capture | ✅ | ❌ | ❌ | ❌ |
+| Dream consolidation | ✅ | ❌ | ❌ | ❌ |
+| Decay & expiry | ✅ | ❌ | ❌ | ❌ |
+| Zero dependencies | ✅ | ✅ | ✅ | ❌ |
+| Single file | ✅ | ❌ | ❌ | ❌ |
+| Works with any AI tool | ✅ | Claude only | Cursor only | Varies |
+
 ## Quick Start
 
 ```bash
