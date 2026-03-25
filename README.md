@@ -6,6 +6,7 @@
 ![SQLite 3.37+](https://img.shields.io/badge/sqlite-3.37%2B-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 ![Zero Dependencies](https://img.shields.io/badge/core-zero%20dependencies-green)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Y2jCXNGgE)
 
 ## What's New in v5
 
@@ -376,6 +377,12 @@ Built for real-world use with Claude Code in production environments.
 ## License
 
 MIT License - see [LICENSE](LICENSE)
+
+## Community
+
+Join our Discord for help, discussions, and sharing workflows:
+
+- **Discord:** [https://discord.gg/Y2jCXNGgE](https://discord.gg/Y2jCXNGgE)
 
 ## Contributing
 
