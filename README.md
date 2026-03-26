@@ -1,12 +1,19 @@
-# ai-memory-sqlite
+# AI-IQ
 
-**Persistent memory for AI coding assistants. Stop repeating yourself every session.**
+**AI doesn't need knowledge — it needs relevant context, relative to each situation.**
 
 ![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)
 ![SQLite 3.37+](https://img.shields.io/badge/sqlite-3.37%2B-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
 ![Zero Dependencies](https://img.shields.io/badge/core-zero%20dependencies-green)
+[![GitHub](https://img.shields.io/github/stars/kobie3717/ai-iq?style=social)](https://github.com/kobie3717/ai-iq)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Y2jCXNGgE)
+
+## Philosophy
+
+AI-IQ is a persistent context system for AI coding assistants. Large language models already know everything — they've been trained on the entire internet. What they lack is YOUR context: your decisions, your architecture, your patterns, your mistakes, your project history. AI-IQ gives them exactly the right context at exactly the right time.
+
+Not a knowledge base. Not a RAG pipeline. A context intelligence system that understands what's relevant to each situation through hybrid search (keyword + semantic), graph intelligence, and automatic decay of stale information.
 
 ## What's New in v5
 
@@ -20,26 +27,22 @@
 - **Configurable Paths** - Environment variables for all paths, no hardcoded values
 - **Production Tested** - Managing 100+ memories across 7 real-world projects
 
-## The Problem
+## Core Features
 
-Every time you start a new session with Claude Code, Cursor, or any AI assistant, it forgets your project context. You waste time re-explaining architecture decisions, project conventions, and lessons learned. Your AI starts from zero, every single time.
+AI-IQ gives your AI assistant persistent, searchable context that survives across sessions:
 
-## The Solution
-
-`ai-memory-sqlite` gives your AI assistant a persistent, searchable memory that survives across sessions:
-
-- **Persistent memory across sessions** - SQLite-backed storage that never forgets
+- **Persistent context across sessions** - SQLite-backed storage that never forgets
 - **Hybrid search** - Combines keyword (FTS5), semantic embeddings, and graph traversal with RRF fusion
 - **Smart deduplication** - Blocks duplicates automatically, warns on similar entries
 - **Graph intelligence** - Entities, relationships, facts, and spreading activation for context discovery
 - **Automated hooks** - Auto-captures errors and generates session snapshots
-- **Cross-tool sync** - Share memory between Claude Code, OpenClaw, and other AI tools
+- **Cross-tool sync** - Share context between Claude Code, OpenClaw, and other AI tools
 - **Zero config, single file** - No API keys, no cloud services, 100% local and private
 
 ## How It Compares
 
-| Feature | ai-memory-sqlite | .claude/memory | Cursor Rules | Custom RAG |
-|---------|-----------------|----------------|--------------|------------|
+| Feature | AI-IQ | .claude/memory | Cursor Rules | Custom RAG |
+|---------|-------|----------------|--------------|------------|
 | Persists across sessions | ✅ | ✅ | ✅ | ✅ |
 | Semantic search | ✅ | ❌ | ❌ | ✅ |
 | Graph relationships | ✅ | ❌ | ❌ | ❌ |
@@ -54,8 +57,8 @@ Every time you start a new session with Claude Code, Cursor, or any AI assistant
 
 ```bash
 # Clone and install
-git clone https://github.com/kobie3717/ai-memory-sqlite.git
-cd ai-memory-sqlite
+git clone https://github.com/kobie3717/ai-iq.git
+cd ai-iq
 ./scripts/install.sh
 
 # Add your first memory
@@ -327,8 +330,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
 
 ## Comparison
 
-| Feature | ai-memory-sqlite | Mem0 | Engram | LedgerMind |
-|---------|-----------------|------|---------|------------|
+| Feature | AI-IQ | Mem0 | Engram | LedgerMind |
+|---------|-------|------|---------|------------|
 | Self-hosted | ✅ | ❌ (cloud) | ✅ | ✅ |
 | Zero config | ✅ | ❌ | ✅ | ❌ |
 | Hybrid search | ✅ | ✅ | ❌ | ❌ |
@@ -390,4 +393,4 @@ Issues and pull requests welcome. See [ARCHITECTURE.md](ARCHITECTURE.md) for imp
 
 ---
 
-**Stop repeating yourself. Give your AI a memory.**
+**Give your AI the context it needs, when it needs it.**
