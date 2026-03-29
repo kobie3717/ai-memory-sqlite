@@ -20,6 +20,8 @@ from .utils import auto_tag, word_set, normalize, find_similar, word_overlap, si
 from .fsrs import fsrs_retention, fsrs_new_stability, fsrs_new_difficulty, fsrs_next_interval, fsrs_auto_rating
 from .importance import update_importance
 from .embedding import embed_and_store, embed_text, semantic_search
+from .relations import find_conflicts, merge_memories
+from .export import run_decay
 
 # Lazy imports for optional dependencies
 try:
@@ -184,6 +186,11 @@ def cmd_dream():
     if len(conflicts) - auto_merged > 0:
         print(f"   {len(conflicts) - auto_merged} potential duplicates need manual review — run: memory-tool conflicts")
 
+    # 2.5 Reconsolidation: find near-duplicates (85-95% similarity) and auto-merge
+    print("\n🧠 Reconsolidating near-duplicate memories...")
+    reconsolidated = reconsolidate_memories(conn)
+    print(f"   Reconsolidated {reconsolidated} near-duplicates")
+
     # 3. Normalize relative dates in memory content
     print("\n📅 Normalizing relative dates...")
     memories_to_update = conn.execute("""
@@ -247,7 +254,7 @@ def cmd_dream():
     _get_export_memory_md()(None)
 
     # 7. Generate dream report and save as memory
-    report_summary = f"Dream cycle complete: {total_insights} insights extracted, {auto_merged} memories consolidated, {consol['merged']} duplicates merged, {consol['insights']} patterns found, {consol['pruned']} pruned, {total_dates_normalized} dates normalized from {len(unprocessed)} transcripts"
+    report_summary = f"Dream cycle complete: {total_insights} insights extracted, {auto_merged} memories consolidated, {reconsolidated} near-duplicates reconsolidated, {consol['merged']} duplicates merged, {consol['insights']} patterns found, {consol['pruned']} pruned, {total_dates_normalized} dates normalized from {len(unprocessed)} transcripts"
 
     today = datetime.now().strftime('%Y-%m-%d')
     _get_add_memory()(
@@ -262,7 +269,8 @@ def cmd_dream():
 
     print(f"\n✨ Dream complete!")
     print(f"   📚 {total_insights} insights extracted")
-    print(f"   🔗 {auto_merged + consol['merged']} duplicates consolidated")
+    print(f"   🔗 {auto_merged + reconsolidated + consol['merged']} duplicates consolidated")
+    print(f"   🧠 {reconsolidated} near-duplicates reconsolidated")
     print(f"   💡 {consol['insights']} patterns discovered")
     print(f"   🗑️  {consol['pruned']} low-value memories pruned")
     print(f"   📅 {total_dates_normalized} dates normalized")
@@ -362,7 +370,7 @@ def consolidate_memories(conn):
             conn.execute("""
                 INSERT INTO memories (category, content, tags, project, priority, active, created_at, updated_at)
                 VALUES ('learning', ?, 'consolidation,pattern', ?, 7, 1, datetime('now'), datetime('now'))
-            """, (pattern_content, group[0].get("project")))
+            """, (pattern_content, group[0]["project"] if group[0]["project"] else None))
             results["insights"] += 1
 
     # Phase 3: Strengthen graph connections between co-accessed memories
@@ -422,5 +430,79 @@ def consolidate_memories(conn):
     conn.commit()
     return results
 
+
+def reconsolidate_memories(conn):
+    """Reconsolidation phase: find near-duplicates (85-95% similarity) and auto-merge them.
+    This phase happens after standard dedup but catches memories that are almost identical
+    but have minor differences (like updated timestamps, slightly different wording, etc.)."""
+
+    active = conn.execute("""
+        SELECT id, content, category, project, tags, imp_score, access_count
+        FROM memories WHERE active = 1
+        ORDER BY imp_score DESC
+    """).fetchall()
+
+    reconsolidated = 0
+    seen_ids = set()
+
+    for i, a in enumerate(active):
+        if a["id"] in seen_ids:
+            continue
+        for b in active[i+1:]:
+            if b["id"] in seen_ids:
+                continue
+            # Only compare within same category
+            if a["category"] != b["category"]:
+                continue
+
+            # Calculate similarity
+            ratio = SequenceMatcher(None, a["content"].lower(), b["content"].lower()).ratio()
+
+            # Near-duplicate range: 85-95%
+            if 0.85 <= ratio < 0.95:
+                # Keep the one with higher importance/access
+                keep_a = (a["imp_score"] or 0) > (b["imp_score"] or 0)
+                if (a["imp_score"] or 0) == (b["imp_score"] or 0):
+                    keep_a = (a["access_count"] or 0) >= (b["access_count"] or 0)
+
+                keep_id = a["id"] if keep_a else b["id"]
+                discard_id = b["id"] if keep_a else a["id"]
+
+                # Merge: append unique facts from older to newer
+                keep_mem = a if keep_a else b
+                discard_mem = b if keep_a else a
+
+                # Extract unique sentences from discarded memory
+                keep_sentences = set(s.strip() for s in keep_mem["content"].split('.') if s.strip())
+                discard_sentences = set(s.strip() for s in discard_mem["content"].split('.') if s.strip())
+                unique_facts = discard_sentences - keep_sentences
+
+                # If there are unique facts, append them to the kept memory
+                if unique_facts:
+                    updated_content = keep_mem["content"]
+                    for fact in unique_facts:
+                        if fact and len(fact) > 10:  # Only meaningful facts
+                            updated_content += f" {fact}."
+
+                    conn.execute(
+                        "UPDATE memories SET content = ?, updated_at = datetime('now') WHERE id = ?",
+                        (updated_content, keep_id)
+                    )
+
+                    # Re-embed the updated memory
+                    embed_and_store(conn, keep_id, updated_content)
+
+                # Mark as superseded
+                conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))
+                conn.execute(
+                    "INSERT OR IGNORE INTO memory_relations (source_id, target_id, relation_type) VALUES (?, ?, 'supersedes')",
+                    (keep_id, discard_id)
+                )
+
+                seen_ids.add(discard_id)
+                reconsolidated += 1
+
+    conn.commit()
+    return reconsolidated
 
 

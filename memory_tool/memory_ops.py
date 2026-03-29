@@ -107,6 +107,78 @@ def auto_adjust_priority(conn, mem_id):
 # ── Smart Ingest (v4 Feature #4) ──
 
 
+def check_contradictions(content, category=None, project=None):
+    """Check for potential contradictions with existing memories.
+    Returns a warning string if contradictions are detected, None otherwise."""
+
+    # Contradiction patterns (negation indicators)
+    CONTRADICTION_PATTERNS = [
+        r'\bnot\b', r'\bdon\'?t\b', r'\bdoesn\'?t\b', r'\bdidn\'?t\b',
+        r'\bwon\'?t\b', r'\bwouldn\'?t\b', r'\bcan\'?t\b', r'\bcannot\b',
+        r'\brejected\b', r'\bdisabled\b', r'\bremoved\b', r'\bstopped\b',
+        r'\bno longer\b', r'\binstead of\b', r'\breplaced\b', r'\bchanged from\b',
+        r'\bunlike\b', r'\bopposite\b', r'\bcontrary to\b', r'\brather than\b',
+        r'\bnever\b', r'\bneither\b', r'\bnor\b', r'\babandoned\b', r'\bdiscarded\b'
+    ]
+
+    # Only check if semantic search is available
+    if not has_vec_support():
+        return None
+
+    content_lower = content.lower()
+    has_negation = any(re.search(pattern, content_lower) for pattern in CONTRADICTION_PATTERNS)
+
+    # If no negation patterns, no contradiction likely
+    if not has_negation:
+        return None
+
+    # Do semantic search for similar memories (>80% similarity)
+    conn = get_db()
+    try:
+        query_embedding = embed_text(content)
+        if query_embedding is None:
+            conn.close()
+            return None
+
+        # Search for highly similar memories using cosine distance
+        query = """
+            SELECT m.id, m.content, (1 - distance) as similarity
+            FROM memory_vec v
+            JOIN memories m ON m.id = v.rowid
+            WHERE m.active = 1
+            AND v.embedding MATCH ?
+            AND k = 10
+            ORDER BY distance
+        """
+
+        results = conn.execute(query, (query_embedding,)).fetchall()
+
+        # Filter by similarity threshold and category/project if provided
+        high_similarity = []
+        for r in results:
+            if r['similarity'] > 0.80:
+                if category and r['content']:
+                    # Check if same general topic
+                    mem = conn.execute("SELECT category, project FROM memories WHERE id = ?", (r['id'],)).fetchone()
+                    if mem and mem['category'] == category:
+                        high_similarity.append(r)
+                else:
+                    high_similarity.append(r)
+
+        conn.close()
+
+        if high_similarity:
+            # Return warning with the most similar memory
+            most_similar = high_similarity[0]
+            preview = most_similar['content'][:80] + "..." if len(most_similar['content']) > 80 else most_similar['content']
+            return f"⚠️  Potential contradiction with memory #{most_similar['id']} ({most_similar['similarity']:.0%} similar): {preview}"
+
+        return None
+
+    except Exception as e:
+        conn.close()
+        return None
+
 
 def smart_ingest(category, content, tags="", project=None, priority=0, related_to=None,
                  expires_at=None, source="manual", topic_key=None, derived_from=None,
@@ -119,6 +191,9 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
     - CREATE: <50% (normal insert)
     """
     tags = auto_tag(content, tags)
+
+    # Check for contradictions using semantic search (if available)
+    contradiction_warning = check_contradictions(content, category, project)
 
     # Check for topic_key upsert
     if topic_key:
@@ -150,6 +225,11 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
             conn.close()
             _get_export_memory_md()()
             print(f"Updated memory #{existing['id']} (revision {new_revision}) key:{topic_key}")
+
+            # Print contradiction warning if detected
+            if contradiction_warning:
+                print(contradiction_warning)
+
             return existing["id"]
         else:
             # New topic_key, insert normally
@@ -195,6 +275,11 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
             conn.close()
             _get_export_memory_md()()
             print(f"AUTO-UPDATED memory #{best_id} ({score:.0%} match, revision {new_revision})")
+
+            # Print contradiction warning if detected
+            if contradiction_warning:
+                print(contradiction_warning)
+
             return best_id
 
         # SUPERSEDE: 50-70% same project
@@ -232,11 +317,18 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
             conn.close()
             _get_export_memory_md()()
             print(f"Added memory #{new_id}, supersedes #{best_id} ({score:.0%} overlap, different content)")
+
+            # Print contradiction warning if detected
+            if contradiction_warning:
+                print(contradiction_warning)
+
             return new_id
 
         # CREATE with warning: <50% or different category/project
         else:
             print(f"WARNING: Similar memory (score={score:.0%}): #{best_id}: {best_content}")
+            if contradiction_warning:
+                print(contradiction_warning)
 
     # CREATE: Normal insert
     conn = get_db()
@@ -267,6 +359,11 @@ def smart_ingest(category, content, tags="", project=None, priority=0, related_t
     _get_export_memory_md()()
     key_str = f" key:{topic_key}" if topic_key else ""
     print(f"Added memory #{mem_id} [{category}]{key_str}{' tags:' + tags if tags else ''}")
+
+    # Print contradiction warning if detected
+    if contradiction_warning:
+        print(contradiction_warning)
+
     return mem_id
 
 
@@ -279,6 +376,10 @@ def add_memory(category, content, tags="", project=None, priority=0, related_to=
     if skip_dedup:
         # Old behavior: skip dedup entirely
         tags = auto_tag(content, tags)
+
+        # Check for contradictions even if skipping dedup
+        contradiction_warning = check_contradictions(content, category, project)
+
         conn = get_db()
         cur = conn.execute(
             """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning)
@@ -304,6 +405,11 @@ def add_memory(category, content, tags="", project=None, priority=0, related_to=
 
         _get_export_memory_md()()
         print(f"Added memory #{mem_id} [{category}]{' tags:' + tags if tags else ''}")
+
+        # Print contradiction warning if detected
+        if contradiction_warning:
+            print(contradiction_warning)
+
         return mem_id
     else:
         return smart_ingest(category, content, tags, project, priority, related_to, expires_at, source, topic_key, derived_from, citations, reasoning)
