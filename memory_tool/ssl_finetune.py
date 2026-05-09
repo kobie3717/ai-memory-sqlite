@@ -92,52 +92,46 @@ def _train_simcse(
     logger.info(f"Fine-tuned model saved to {output_dir}")
 
 
-def _export_to_onnx(hf_model_dir: str, onnx_output_path: str) -> None:
+def _export_to_onnx(hf_model_dir: str, onnx_output_path: str) -> Optional[str]:
     """
-    Export fine-tuned HuggingFace model to ONNX using torch.onnx.export.
-    Matches the input/output names expected by AI-IQ's embedding.py loader.
+    Export fine-tuned model to ONNX via HuggingFace Optimum.
+    Optimum handles dynamic batch/sequence axes correctly for BERT-family models.
+    Returns path to .data sidecar if one was produced, else None.
     """
-    import torch
-    from transformers import AutoTokenizer, AutoModel
+    from optimum.exporters.onnx import main_export
 
-    logger.info("Exporting to ONNX...")
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_dir)
-    model = AutoModel.from_pretrained(hf_model_dir)
-    model.eval()
+    export_dir = onnx_output_path + "_export"
+    os.makedirs(export_dir, exist_ok=True)
 
-    # Dummy input for tracing
-    dummy = tokenizer(
-        "benchmark sentence for onnx export",
-        return_tensors="pt",
-        padding="max_length",
-        max_length=128,
-        truncation=True,
+    logger.info("Exporting to ONNX via optimum (dynamic axes)...")
+    main_export(
+        model_name_or_path=hf_model_dir,
+        output=export_dir,
+        task="feature-extraction",
+        monolith=True,
+        no_post_process=True,
     )
-    input_ids = dummy["input_ids"]
-    attention_mask = dummy["attention_mask"]
-    token_type_ids = dummy.get("token_type_ids", torch.zeros_like(input_ids))
 
-    os.makedirs(os.path.dirname(onnx_output_path), exist_ok=True)
+    # optimum writes export_dir/model.onnx (and optionally model.onnx.data)
+    exported_onnx = os.path.join(export_dir, "model.onnx")
+    if not os.path.exists(exported_onnx):
+        raise FileNotFoundError(f"Optimum did not produce {exported_onnx}")
 
-    with torch.no_grad():
-        torch.onnx.export(
-            model,
-            (input_ids, attention_mask, token_type_ids),
-            onnx_output_path,
-            input_names=["input_ids", "attention_mask", "token_type_ids"],
-            output_names=["last_hidden_state", "pooler_output"],
-            dynamic_axes={
-                "input_ids":      {0: "batch_size", 1: "sequence"},
-                "attention_mask": {0: "batch_size", 1: "sequence"},
-                "token_type_ids": {0: "batch_size", 1: "sequence"},
-                "last_hidden_state": {0: "batch_size", 1: "sequence"},
-                "pooler_output":  {0: "batch_size"},
-            },
-            opset_version=14,
-            do_constant_folding=True,
-        )
-
+    onnx_dir = os.path.dirname(onnx_output_path)
+    os.makedirs(onnx_dir, exist_ok=True)
+    shutil.copy2(exported_onnx, onnx_output_path)
     logger.info(f"ONNX model exported to {onnx_output_path}")
+
+    exported_data = os.path.join(export_dir, "model.onnx.data")
+    data_dest = onnx_output_path + ".data"
+    if os.path.exists(exported_data):
+        shutil.copy2(exported_data, data_dest)
+        logger.info(f"External data file: {data_dest}")
+        shutil.rmtree(export_dir, ignore_errors=True)
+        return data_dest
+
+    shutil.rmtree(export_dir, ignore_errors=True)
+    return None
 
 
 def finetune_on_memories(
@@ -180,21 +174,33 @@ def finetune_on_memories(
             raise
 
         try:
-            _export_to_onnx(hf_out, onnx_out)
+            data_file = _export_to_onnx(hf_out, onnx_out)
         except Exception as e:
             logger.error(f"ONNX export failed: {e}")
             raise
 
-        # Backup existing model
+        # Backup existing model (both .onnx and .data sidecar if present)
         existing_onnx = MODEL_DIR / "onnx" / "model.onnx"
         backup_path = MODEL_DIR / "onnx" / "model.onnx.pre-ssl"
         if existing_onnx.exists():
             shutil.copy2(str(existing_onnx), str(backup_path))
             logger.info(f"Backed up existing model to {backup_path}")
+        existing_data = MODEL_DIR / "onnx" / "model.onnx.data"
+        if existing_data.exists():
+            shutil.copy2(str(existing_data), str(MODEL_DIR / "onnx" / "model.onnx.data.pre-ssl"))
 
         # Replace with fine-tuned
         (MODEL_DIR / "onnx").mkdir(parents=True, exist_ok=True)
         shutil.copy2(onnx_out, str(existing_onnx))
         logger.info(f"Replaced ONNX model at {existing_onnx}")
+
+        # Copy external data sidecar (PyTorch 2.10 dynamo exporter always creates one for large models)
+        if data_file and os.path.exists(data_file):
+            shutil.copy2(data_file, str(existing_data))
+            logger.info(f"Copied ONNX data sidecar to {existing_data}")
+        elif existing_data.exists():
+            # Fine-tuned model has no sidecar but old one exists — remove to avoid stale reference
+            existing_data.unlink()
+            logger.info("Removed stale ONNX data sidecar (fine-tuned model uses single file)")
 
     return True

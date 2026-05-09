@@ -96,12 +96,12 @@ def embed_text(text: str) -> Optional[bytes]:
         attention_mask = np.array([encoding.attention_mask], dtype=np.int64)
         token_type_ids = np.zeros_like(input_ids, dtype=np.int64)
 
-        # Run inference
-        outputs = session.run(None, {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'token_type_ids': token_type_ids
-        })
+        # Run inference — only pass token_type_ids if model declares it
+        session_inputs = {i.name for i in session.get_inputs()}
+        feed = {'input_ids': input_ids, 'attention_mask': attention_mask}
+        if 'token_type_ids' in session_inputs:
+            feed['token_type_ids'] = token_type_ids
+        outputs = session.run(None, feed)
 
         # Mean pooling
         token_embeddings = outputs[0]
@@ -140,12 +140,12 @@ def embed_texts_batch(texts: List[str]) -> List[Optional[bytes]]:
         attention_mask = np.array([e.attention_mask for e in encodings], dtype=np.int64)
         token_type_ids = np.zeros_like(input_ids, dtype=np.int64)
 
-        # Run inference
-        outputs = session.run(None, {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'token_type_ids': token_type_ids
-        })
+        # Run inference — only pass token_type_ids if model declares it
+        session_inputs = {i.name for i in session.get_inputs()}
+        feed = {'input_ids': input_ids, 'attention_mask': attention_mask}
+        if 'token_type_ids' in session_inputs:
+            feed['token_type_ids'] = token_type_ids
+        outputs = session.run(None, feed)
 
         # Mean pooling
         token_embeddings = outputs[0]
@@ -241,13 +241,15 @@ def reindex_embeddings(conn: sqlite3.Connection) -> None:
             if emb is not None:
                 mem_id = batch[j]["id"]
                 try:
+                    # vec0 virtual tables don't support INSERT OR REPLACE; delete first
+                    conn.execute("DELETE FROM memory_vec WHERE rowid = ?", (mem_id,))
                     conn.execute(
-                        "INSERT OR REPLACE INTO memory_vec(rowid, embedding) VALUES (?, ?)",
+                        "INSERT INTO memory_vec(rowid, embedding) VALUES (?, ?)",
                         (mem_id, emb)
                     )
                     total += 1
-                except sqlite3.Error:
-                    pass  # Skip this embedding if insert fails
+                except sqlite3.Error as e:
+                    logger.warning(f"Failed to store embedding for #{mem_id}: {e}")
 
         if (i + batch_size) % 100 == 0:
             logger.debug(f"  Processed {min(i + batch_size, len(rows))}/{len(rows)}...")
