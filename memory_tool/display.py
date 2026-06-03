@@ -476,6 +476,13 @@ Extended Beliefs System (explicit beliefs with evidence tracking):
   memory-tool belief-stats                      # Show belief accuracy, calibration, strongest/weakest beliefs
   memory-tool expired-predictions               # List predictions past deadline that need resolution
 
+User Modeling (Honcho-style):
+  memory-tool user-model                        # Generate user profile from existing memories
+  memory-tool user-model --update               # Dialectic mode: analyze recent memories with Claude API
+  memory-tool user-model --update --days 14     # Analyze last 14 days (default: 7)
+  memory-tool user-model --dry-run              # Preview without writing file
+  memory-tool user-model --output /path/to/file.md  # Custom output path
+
 Categories: project, decision, preference, error, learning, pending, architecture, workflow, contact, belief
 Priority: 0 (low) to 10 (high). Auto-adjusts based on access frequency.
 Vector search: Requires sqlite-vec, onnxruntime, tokenizers, numpy. Model: all-MiniLM-L6-v2 (384-dim).

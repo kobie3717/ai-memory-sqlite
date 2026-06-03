@@ -2223,6 +2223,10 @@ def main() -> None:
 
         conn.close()
 
+    elif cmd == "user-model":
+        # Honcho-style user modeling
+        cmd_user_model(sys.argv[1:])
+
     elif cmd == "session-log":
         from pathlib import Path
 

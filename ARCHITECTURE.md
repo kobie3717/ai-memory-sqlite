@@ -154,7 +154,28 @@ Like a traveler's passport that proves identity and history, a memory passport i
 
 ---
 
-### 9. Causal Reasoning (Narrative Construction)
+### 9. User Model (Honcho-Style Profile)
+
+**Biology**: Your brain maintains a model of others — their preferences, communication style, quirks. This guides how you interact with them.
+
+**AI-IQ**: User model layer builds structured profile:
+- Scans memories for identity signals (role, expertise, email)
+- Extracts preferences (tools, workflows, communication style)
+- Detects patterns (recurring behaviors, common requests)
+- Logs corrections (AI errors + correct behavior)
+- Captures dialect (shorthand terms, jargon, project vocabulary)
+
+Outputs to `/root/.claude/projects/-root/memory/user-model.md` — a living document that AI agents can read to understand user preferences and adapt behavior.
+
+**Dialectic mode**: Uses Claude API to analyze recent sessions and extract new insights, saving them as memories (category='user_model').
+
+**Implementation**: `memory_tool/user_model.py` — scans memories by category/content patterns, builds structured markdown, optional AI analysis
+
+**Commands**: `memory-tool user-model`, `memory-tool user-model --update [--days N]`
+
+---
+
+### 10. Causal Reasoning (Narrative Construction)
 
 **Biology**: Your brain builds cause-effect stories. "I didn't sleep → I'm tired → I drank coffee → I feel better."
 
@@ -186,7 +207,7 @@ Walk these edges to construct narratives: "Error X → Investigation Y → Decis
 └───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┘
     │   │   │   │   │   │   │   │   │   │   │   │   │
 ┌───▼───▼───▼───▼───▼───▼───▼───▼───▼───▼───▼───▼───▼───┐
-│  Specialized Modules (25 files)                         │
+│  Specialized Modules (26 files)                         │
 │                                                          │
 │  memory_ops    → CRUD (add/update/delete/get)           │
 │  database      → SQLite connection, schema init         │
@@ -205,6 +226,7 @@ Walk these edges to construct narratives: "Error X → Investigation Y → Decis
 │  sync          → OpenClaw bidirectional bridge          │
 │  runs          → Workflow tracking (steps, timing)      │
 │  identity      → Trait discovery, self-model            │
+│  user_model    → User profiling, Honcho-style           │
 │  meta_learning → Search feedback, metrics tracking      │
 │  narrative     → Causal story construction              │
 │  feedback      → Search result usage tracking           │

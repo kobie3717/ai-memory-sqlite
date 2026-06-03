@@ -33,3 +33,4 @@ from .meta_learning import (
 )
 from .identity import discover_traits, get_identity, save_identity_snapshot, get_identity_evolution, compare_identity_snapshots
 from .focus import focus_topic, cmd_focus
+from .user_model import generate_user_model, update_user_model_with_transcript, scan_user_memories, cmd_user_model
