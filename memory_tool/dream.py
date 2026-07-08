@@ -335,8 +335,10 @@ def cmd_dream() -> None:
             print(f"[dream] Vacuuming database ({inactive_count} inactive memories)...")
             conn.execute("VACUUM")
             print(f"[dream] Vacuum complete.")
+        else:
+            print(f"[dream] Skipping vacuum ({inactive_count} inactive memories < 50 threshold)")
     except Exception as e:
-        print(f"[dream] Vacuum skipped: {e}")
+        print(f"[dream] Vacuum failed: {e}")
 
     # 7. Generate dream report and save as memory
     report_summary = f"Dream cycle complete: {total_insights} insights extracted, {auto_merged} memories consolidated, {reconsolidated} near-duplicates reconsolidated, {consol['merged']} duplicates merged, {consol['insights']} patterns found, {consol['pruned']} pruned, {total_dates_normalized} dates normalized, {feedback_results['boosted']} feedback-boosted, {feedback_results['decayed']} feedback-decayed, {feedback_results['flagged']} feedback-flagged, {belief_results['merged']} beliefs merged, {belief_results['predictions_expired']} predictions expired, {belief_results['beliefs_weakened']} beliefs weakened, {belief_results.get('deprecated', 0)} beliefs deprecated, {tier_results['working_to_episodic']} working→episodic, {tier_results['episodic_to_semantic']} episodic→semantic, {promoted} promoted to semantic, {demoted} demoted to episodic, {expired} working expired, {len(high_risk)} high-risk drift candidates detected from {len(unprocessed)} transcripts"
@@ -647,7 +649,7 @@ def migrate_existing_tiers(conn: sqlite3.Connection) -> Dict[str, int]:
     """).fetchall()
 
     for mem in memories:
-        current_tier = mem.get('tier', 'episodic')
+        current_tier = mem['tier'] if mem['tier'] else 'episodic'
 
         # Skip if already properly tiered
         if current_tier in ('semantic', 'working'):
