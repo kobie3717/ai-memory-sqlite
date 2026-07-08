@@ -50,7 +50,13 @@ def _get_export_memory_md() -> Any:
 
 def cmd_dream() -> None:
     """Review session transcripts, consolidate memories, normalize dates — like REM sleep for AI memory."""
-    print("🌙 Dreaming: processing session transcripts...")  # User-facing output
+    import os
+    dry_run = os.environ.get('AIIQ_DREAM_DRY_RUN', '').lower() in ('1', 'true', 'yes')
+
+    if dry_run:
+        print("🌙 [DRY-RUN] Dream mode preview — no changes will be made.")
+    else:
+        print("🌙 Dreaming: processing session transcripts...")  # User-facing output
 
     # Find transcript directories
     transcript_paths = []
@@ -68,17 +74,22 @@ def cmd_dream() -> None:
             if jsonl_file.is_file():
                 transcript_paths.append(jsonl_file)
 
-    if not transcript_paths:
-        logger.info("No session transcripts found.")
-        return
-
     conn = get_db()
 
-    # Track already processed files
-    processed_files = {row['session_file'] for row in conn.execute("SELECT session_file FROM dream_log").fetchall()}
+    if dry_run:
+        logger.info("   [DRY-RUN] Skipping transcript scan (saves ~30s)")
+        unprocessed = []
+        total_insights = 0
+    elif not transcript_paths:
+        logger.info("No session transcripts found.")
+        unprocessed = []
+        total_insights = 0
 
-    # Process max 50 transcripts per run
-    unprocessed = [p for p in transcript_paths if str(p) not in processed_files][:50]
+    if not dry_run:
+        # Track already processed files
+        processed_files = {row['session_file'] for row in conn.execute("SELECT session_file FROM dream_log").fetchall()}
+        # Process max 50 transcripts per run
+        unprocessed = [p for p in transcript_paths if str(p) not in processed_files][:50]
 
     if not unprocessed:
         logger.info(f"All {len(transcript_paths)} transcripts already processed.")
@@ -179,9 +190,6 @@ def cmd_dream() -> None:
     conflicts = find_conflicts()
     auto_merged = 0
 
-    # Check for dry-run mode
-    import os
-    dry_run = os.environ.get('AIIQ_DREAM_DRY_RUN', '').lower() in ('1', 'true', 'yes')
 
     for conflict in conflicts:
         # Auto-merge if >80% similar
