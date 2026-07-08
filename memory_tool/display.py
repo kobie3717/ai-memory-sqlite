@@ -384,6 +384,7 @@ Usage:
   memory-tool detect "<text>"                   # Detect correction in text
   memory-tool stale                             # Review stale memories
   memory-tool decay                             # Flag stale, deprioritize, expire (FSRS-6)
+  memory-tool passive-verify [--dry-run]        # Promote memories proven valuable by repeated search hits
   memory-tool consolidate                       # Cross-memory consolidation (merge, patterns, prune)
   memory-tool retention                         # Show memories by retention (lowest first)
   memory-tool importance                        # Show memories ranked by importance score

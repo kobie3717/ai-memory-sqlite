@@ -1286,3 +1286,79 @@ def list_reflections_by_task() -> Dict[str, List[Dict[str, Any]]]:
     return grouped
 
 
+def passive_verify(dry_run: bool = False) -> dict:
+    """
+    Promote memories that repeatedly appear in search results (revealed preference).
+    Memories in top search results on 3+ distinct days = auto-promote.
+    Returns: {promoted: [ids], already_verified: [ids], checked: int}
+    """
+    conn = get_db()
+
+    # Parse search_log result_ids (comma-separated memory IDs per search)
+    # Group by date (created_at[:10]), count distinct dates per memory_id
+    rows = conn.execute("""
+        SELECT result_ids, created_at FROM search_log
+        WHERE result_ids IS NOT NULL AND result_ids != ''
+        ORDER BY created_at DESC LIMIT 1000
+    """).fetchall()
+
+    # Count distinct dates each memory appeared in search results
+    from collections import defaultdict
+    memory_dates = defaultdict(set)
+    for row in rows:
+        date = row['created_at'][:10]
+        for mid in row['result_ids'].split(','):
+            mid = mid.strip()
+            if mid.isdigit():
+                memory_dates[int(mid)].add(date)
+
+    total_distinct_days = len(set(row['created_at'][:10] for row in rows))
+    # Require appearance on >60% of tracked days (genuine signal, not noise)
+    # With 23 days of data, threshold = ~14 days. Catches top ~1% of memories.
+    min_days = max(5, int(total_distinct_days * 0.60))
+    candidates = {mid: dates for mid, dates in memory_dates.items() if len(dates) >= min_days}
+
+    promoted = []
+    already_verified = []
+
+    for mem_id, dates in candidates.items():
+        mem = conn.execute(
+            "SELECT id, priority, tags, active, access_count FROM memories WHERE id = ? AND active = 1",
+            (mem_id,)
+        ).fetchone()
+        if not mem:
+            continue
+
+        tags = (mem['tags'] or '').split(',')
+        tags = [t.strip() for t in tags if t.strip()]
+
+        if 'search-verified' in tags:
+            already_verified.append(mem_id)
+            continue
+
+        if not dry_run:
+            # Boost priority (cap at 9)
+            new_priority = min(9, (mem['priority'] or 5) + 2)
+            # Add search-verified tag
+            new_tags = ','.join(tags + ['search-verified'])
+            # Boost access_count to >= 5 for decay immunity
+            new_access = max(5, mem['access_count'] or 0)
+            conn.execute(
+                "UPDATE memories SET priority = ?, tags = ?, access_count = ?, updated_at = datetime('now') WHERE id = ?",
+                (new_priority, new_tags, new_access, mem_id)
+            )
+
+        promoted.append(mem_id)
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    return {
+        'promoted': promoted,
+        'already_verified': already_verified,
+        'checked': len(candidates),
+        'dry_run': dry_run
+    }
+
+

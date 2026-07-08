@@ -382,9 +382,17 @@ def main() -> None:
     elif cmd == "export":
         flags, _ = parse_flags(sys.argv, 2)
         project = flags.get("project") or detect_project()
-        export_memory_md(project)
-        focus = f" (focused on {project})" if project else ""
-        print(f"Exported to {MEMORY_MD_PATH}{focus}")
+
+        # Try phase-aware export first, fallback to classic export on error
+        try:
+            export_memory_md_phased(project)
+            focus = f" (focused on {project})" if project else ""
+            print(f"Exported to {MEMORY_MD_PATH}{focus} (phase-aware)")
+        except Exception as e:
+            logger.warning(f"Phase-aware export failed: {e}, falling back to classic export")
+            export_memory_md(project)
+            focus = f" (focused on {project})" if project else ""
+            print(f"Exported to {MEMORY_MD_PATH}{focus}")
 
     elif cmd == "stats":
         flags, _ = parse_flags(sys.argv, 2)
@@ -644,6 +652,21 @@ def main() -> None:
 
     elif cmd == "decay":
         run_decay()
+
+    elif cmd == "passive-verify":
+        from .memory_ops import passive_verify
+        dry_run = "--dry-run" in sys.argv
+        result = passive_verify(dry_run=dry_run)
+        if result['dry_run']:
+            print(f"DRY RUN: Would promote {len(result['promoted'])} memories")
+        else:
+            print(f"Passive verification complete:")
+            print(f"  Promoted: {len(result['promoted'])} memories (search-verified tag + priority boost)")
+            print(f"  Already verified: {len(result['already_verified'])}")
+            print(f"  Checked: {result['checked']} candidates (appeared in search 3+ distinct days)")
+        if result['promoted']:
+            print(f"  IDs: {', '.join(str(i) for i in result['promoted'][:10])}" +
+                  (f"... (+{len(result['promoted'])-10} more)" if len(result['promoted']) > 10 else ""))
 
     elif cmd == "consolidate":
         print("🧠 Running memory consolidation...")
@@ -1740,6 +1763,58 @@ def main() -> None:
         print("  refute <id> --notes Y     - Mark memory as wrong and demote")
         print("  list-unvalidated          - Show unvalidated semantic memories")
         print("  report                    - Show validation statistics")
+
+    elif cmd == "contradict" and len(sys.argv) >= 3:
+        from .contradiction import log_contradiction
+        flags, args = parse_flags(sys.argv, 2)
+
+        if not args:
+            print("Usage: memory-tool contradict <memory_id> [--expected TEXT] [--found TEXT] [--context-hash HASH]")
+            sys.exit(1)
+
+        memory_id = int(args[0])
+        expected = flags.get("expected")
+        found = flags.get("found")
+        context_hash = flags.get("context-hash")
+
+        contradiction_id = log_contradiction(
+            memory_id=memory_id,
+            expected=expected,
+            found=found,
+            context_hash=context_hash
+        )
+        print(f"Logged contradiction #{contradiction_id} for memory #{memory_id}")
+
+    elif cmd == "reconcile":
+        from .contradiction import reconcile
+        flags, _ = parse_flags(sys.argv, 2)
+        dry_run = flags.get("dry-run", False)
+
+        if dry_run:
+            print("DRY RUN MODE: No changes will be made\n")
+
+        result = reconcile(dry_run=dry_run)
+
+        print("\nReconciliation complete:")
+        if result['deleted']:
+            print(f"  Deleted: {len(result['deleted'])} memories")
+            for mem_id in result['deleted']:
+                print(f"    #{mem_id}")
+        if result['flagged']:
+            print(f"  Flagged for review: {len(result['flagged'])} memories")
+            for mem_id in result['flagged']:
+                print(f"    #{mem_id}")
+        if result['skipped']:
+            print(f"  Skipped: {result['skipped']} (already inactive or deleted)")
+
+        if not result['deleted'] and not result['flagged'] and not result['skipped']:
+            print("  No contradictions to reconcile.")
+
+    elif cmd == "contradictions":
+        from .contradiction import show_contradiction_journal
+        flags, _ = parse_flags(sys.argv, 2)
+        limit = int(flags.get("limit", 20))
+        show_contradiction_journal(limit=limit)
 
     elif cmd == "believe" and len(sys.argv) >= 3:
         from .beliefs import set_confidence

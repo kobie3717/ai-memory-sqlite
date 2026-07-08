@@ -22,6 +22,7 @@ from .utils import auto_tag, word_set, normalize, find_similar, word_overlap, si
 from .fsrs import fsrs_retention, fsrs_new_stability, fsrs_new_difficulty, fsrs_next_interval, fsrs_auto_rating
 from .importance import update_importance
 from .embedding import embed_and_store, embed_text, embed_texts_batch, semantic_search
+from .phase_context import detect_phase, counterfactual_score, survivor_score
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,173 @@ def _get_relations_functions() -> Tuple[Any, Any]:
     from .relations import find_conflicts
     from .snapshots import get_snapshots
     return find_conflicts, get_snapshots
+
+
+def export_memory_md_phased(focus_project: Optional[str] = None) -> None:
+    """Phase-aware memory export with counterfactual scoring.
+
+    Splits the 5KB budget into:
+    - ~2KB survivor layer (highest counterfactual score across ALL phases)
+    - ~3KB phase-specific slice (ranked by counterfactual score FOR current phase)
+    """
+    conn = get_db()
+
+    # Detect current phase
+    phase = detect_phase()
+
+    # Header sections (session, projects, pending) - keep these from original
+    header_lines = []
+    header_lines.append("# Persistent Memory (Auto-Generated)")
+    header_lines.append(f"_Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | "
+                       f"Phase: {phase} | v5: phase-aware counterfactual scoring_")
+    header_lines.append("")
+
+    # Latest session snapshot
+    snaps = conn.execute("SELECT * FROM session_snapshots ORDER BY created_at DESC LIMIT 3").fetchall()
+    if snaps:
+        header_lines.append(f"## Last Session ({snaps[0]['created_at'][:16]})")
+        header_lines.append(f"{snaps[0]['summary']}")
+        if snaps[0]["project"]:
+            header_lines.append(f"Project: {snaps[0]['project']}")
+        header_lines.append("")
+
+    # Projects (minimal - just list names, details in phase-specific section)
+    projects = conn.execute(
+        "SELECT DISTINCT project FROM memories WHERE active = 1 AND project IS NOT NULL ORDER BY project"
+    ).fetchall()
+    if projects:
+        header_lines.append("## Active Projects")
+        proj_names = [p["project"] for p in projects]
+        # Show first 5 projects, rest as count
+        if len(proj_names) <= 5:
+            header_lines.append(", ".join(proj_names))
+        else:
+            header_lines.append(", ".join(proj_names[:5]) + f" (+{len(proj_names)-5} more)")
+        header_lines.append("")
+
+    # Pending count only - details in phase-specific section
+    pending_count = conn.execute(
+        "SELECT COUNT(*) as c FROM memories WHERE active = 1 AND category = 'pending'"
+    ).fetchone()["c"]
+    if pending_count:
+        header_lines.append(f"## Pending: {pending_count} items")
+        header_lines.append("_(Details in phase-specific section below)_")
+        header_lines.append("")
+
+    header_text = "\n".join(header_lines)
+    header_bytes = len(header_text.encode('utf-8'))
+
+    # Calculate budgets - reserve more for content sections
+    total_budget = MAX_MEMORY_MD_BYTES
+    footer_reserve = 300  # Reserve for footer
+    header_cap = 800  # Cap header at 800 bytes to ensure room for content
+
+    # If header is too large, truncate it
+    if header_bytes > header_cap:
+        logger.warning(f"Header too large ({header_bytes}B), capping at {header_cap}B")
+        header_text = header_text[:header_cap]
+        header_bytes = header_cap
+
+    available_budget = total_budget - header_bytes - footer_reserve
+    survivor_budget = int(available_budget * 0.4)  # 40% for survivors
+    phase_budget = available_budget - survivor_budget  # 60% for phase-specific
+
+    # Fetch ALL active non-stale memories
+    all_memories = conn.execute("""
+        SELECT * FROM memories
+        WHERE active = 1 AND stale = 0
+        ORDER BY priority DESC, updated_at DESC
+    """).fetchall()
+
+    # Convert to list of dicts for easier processing
+    memories = [dict(m) for m in all_memories]
+
+    # Score each memory
+    for m in memories:
+        m['_survivor_score'] = survivor_score(m)
+        m['_phase_score'] = counterfactual_score(m, phase)
+
+    # Build survivor layer - highest survivor scores
+    survivors_sorted = sorted(memories, key=lambda m: m['_survivor_score'], reverse=True)
+    survivor_memories = []
+    survivor_ids = set()
+    survivor_bytes = 0
+
+    for m in survivors_sorted:
+        # Format memory line
+        proj = f" [{m['project']}]" if m.get("project") else ""
+        tag = f" ({m['tags']})" if m.get("tags") else ""
+        acc = f" [x{m['access_count']}]" if m.get('access_count', 0) > 2 else ""
+        line = f"- [{m['category']}] {m['content']}{proj}{tag}{acc}\n"
+        line_bytes = len(line.encode('utf-8'))
+
+        if survivor_bytes + line_bytes > survivor_budget:
+            break
+
+        survivor_memories.append((m, line))
+        survivor_ids.add(m['id'])
+        survivor_bytes += line_bytes
+
+    # Build phase-specific slice - highest phase scores, excluding survivors
+    phase_candidates = [m for m in memories if m['id'] not in survivor_ids]
+    phase_sorted = sorted(phase_candidates, key=lambda m: m['_phase_score'], reverse=True)
+    phase_memories = []
+    phase_bytes = 0
+
+    for m in phase_sorted:
+        proj = f" [{m['project']}]" if m.get("project") else ""
+        tag = f" ({m['tags']})" if m.get("tags") else ""
+        acc = f" [x{m['access_count']}]" if m.get('access_count', 0) > 2 else ""
+        line = f"- [{m['category']}] {m['content']}{proj}{tag}{acc}\n"
+        line_bytes = len(line.encode('utf-8'))
+
+        if phase_bytes + line_bytes > phase_budget:
+            break
+
+        phase_memories.append((m, line))
+        phase_bytes += line_bytes
+
+    # Assemble final output
+    output_lines = [header_text]
+
+    # Phase-specific section
+    if phase_memories:
+        output_lines.append(f"## Core Context (Phase: {phase})")
+        output_lines.append(f"_Top memories for {phase} work (score: phase-specific counterfactual)_")
+        output_lines.append("")
+        for m, line in phase_memories:
+            output_lines.append(line.rstrip())
+        output_lines.append("")
+
+    # Survivor layer
+    if survivor_memories:
+        output_lines.append("## Always-Load (Critical)")
+        output_lines.append("_High-stakes memories that persist across all phases_")
+        output_lines.append("")
+        for m, line in survivor_memories:
+            output_lines.append(line.rstrip())
+        output_lines.append("")
+
+    # Footer with stats
+    total = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1").fetchone()["c"]
+    stale_count = conn.execute("SELECT COUNT(*) as c FROM memories WHERE active = 1 AND stale = 1").fetchone()["c"]
+
+    output_lines.append("---")
+    output_lines.append(f"_Phase: {phase} | Survivors: {len(survivor_memories)} | Phase-specific: {len(phase_memories)} | Total DB: {total} memories_")
+    if stale_count:
+        output_lines.append(f"_{stale_count} stale memories hidden. Run `memory-tool stale` to review._")
+    output_lines.append(f"_Manage: `memory-tool help`_")
+
+    content = "\n".join(output_lines)
+
+    # Final safety check
+    if len(content.encode('utf-8')) > MAX_MEMORY_MD_BYTES:
+        # Truncate with warning
+        max_chars = MAX_MEMORY_MD_BYTES - 100
+        content = content[:max_chars] + "\n\n_[Over budget — run `memory-tool topics` for full view]_"
+
+    conn.close()
+    MEMORY_MD_PATH.write_text(content + "\n")
 
 
 def export_memory_md(focus_project: Optional[str] = None) -> None:
@@ -300,6 +468,15 @@ def run_decay() -> Dict[str, int]:
     """)
 
     for row in cur.fetchall():
+        # Grace period: skip memories created < 30 days ago (let them prove value)
+        try:
+            created_dt = datetime.fromisoformat(row["created_at"].replace('Z', '+00:00')).replace(tzinfo=None)
+            age_days = (now - created_dt).total_seconds() / 86400
+            if age_days < 30:
+                continue  # Skip young memories
+        except (ValueError, AttributeError):
+            pass  # If can't parse created_at, proceed with normal decay
+
         tier = row["tier"] if row["tier"] else "episodic"
         stability = row["fsrs_stability"] or 1.0
         last_acc = row["last_accessed_at"] or row["updated_at"]
@@ -324,12 +501,21 @@ def run_decay() -> Dict[str, int]:
 
     # Also deprioritize memories with very low retention (< 0.3)
     cur2 = conn.execute("""
-        SELECT id, fsrs_stability, last_accessed_at, updated_at, priority, category
+        SELECT id, fsrs_stability, last_accessed_at, updated_at, priority, category, created_at
         FROM memories
         WHERE active = 1 AND priority > 1
         AND category NOT IN ('preference', 'project')
     """)
     for row in cur2.fetchall():
+        # Grace period: skip memories created < 30 days ago
+        try:
+            created_dt = datetime.fromisoformat(row["created_at"].replace('Z', '+00:00')).replace(tzinfo=None)
+            age_days = (now - created_dt).total_seconds() / 86400
+            if age_days < 30:
+                continue  # Skip young memories
+        except (ValueError, AttributeError):
+            pass  # If can't parse created_at, proceed with normal decay
+
         stability = row["fsrs_stability"] or 1.0
         last_acc = row["last_accessed_at"] or row["updated_at"]
         try:

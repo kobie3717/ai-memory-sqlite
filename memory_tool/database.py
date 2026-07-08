@@ -44,6 +44,8 @@ def get_db() -> sqlite3.Connection:
             sqlite_vec.load(conn)
             conn.enable_load_extension(False)
         except (sqlite3.OperationalError, AttributeError) as e:
+            import sys
+            print(f"[ai-iq WARNING] sqlite-vec extension failed to load: {e}. Semantic search disabled, using text-only fallback.", file=sys.stderr)
             pass  # Extension loading failed or not available
 
     return conn
@@ -263,8 +265,9 @@ def init_db() -> None:
                 USING vec0(embedding float[{EMBEDDING_DIM}])
             """)
         except Exception as e:
-            # Silently fail if vec is not available
-            pass
+            import sys
+            print(f"[ai-iq WARNING] sqlite-vec extension failed to load: {e}. Semantic search disabled, using text-only fallback.", file=sys.stderr)
+            pass  # Silently fail if vec is not available
 
     # Phase 6: Search feedback tracking table
     conn.executescript("""
@@ -545,6 +548,10 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_validation_date ON validation_log(validated_at);
         CREATE INDEX IF NOT EXISTS idx_validation_result ON validation_log(result);
     """)
+
+    # Contradiction journal table (deferred active-forgetting mechanism)
+    from .contradiction import ensure_contradiction_table
+    ensure_contradiction_table(conn)
 
     conn.commit()
     conn.close()

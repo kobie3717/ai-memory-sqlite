@@ -78,6 +78,13 @@ def personalized_pagerank(
         if seed_id in scores:
             scores[seed_id] = seed_score
 
+    # Build reverse adjacency once (O(N+E)) instead of checking all pairs (O(N²))
+    reverse_adjacency = {mid: [] for mid in all_memory_ids}
+    for from_id, neighbors in adjacency.items():
+        for to_id in neighbors:
+            if to_id in reverse_adjacency:
+                reverse_adjacency[to_id].append(from_id)
+
     # Power iteration
     for _ in range(iterations):
         new_scores = {mem_id: 0.0 for mem_id in all_memory_ids}
@@ -88,12 +95,10 @@ def personalized_pagerank(
             new_scores[mem_id] = teleport_prob
 
             # Random walk from incoming edges
-            # Need to find incoming edges to this node
-            for other_id in all_memory_ids:
-                if mem_id in adjacency.get(other_id, []):
-                    degree = out_degree.get(other_id, 0)
-                    if degree > 0:
-                        new_scores[mem_id] += damping * scores[other_id] / degree
+            for incoming_id in reverse_adjacency.get(mem_id, []):
+                degree = out_degree.get(incoming_id, 0)
+                if degree > 0:
+                    new_scores[mem_id] += damping * scores[incoming_id] / degree
 
         scores = new_scores
 

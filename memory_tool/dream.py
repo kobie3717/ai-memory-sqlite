@@ -179,21 +179,32 @@ def cmd_dream() -> None:
     conflicts = find_conflicts()
     auto_merged = 0
 
+    # Check for dry-run mode
+    import os
+    dry_run = os.environ.get('AIIQ_DREAM_DRY_RUN', '').lower() in ('1', 'true', 'yes')
+
     for conflict in conflicts:
         # Auto-merge if >80% similar
         if conflict['score'] > 0.80:
-            merge_memories(conflict['id1'], conflict['id2'])
+            if dry_run:
+                logger.info(f"   [DRY-RUN] Would merge #{conflict['id1']} and #{conflict['id2']} (score={conflict['score']:.2f})")
+            else:
+                merge_memories(conflict['id1'], conflict['id2'])
             auto_merged += 1
 
-    logger.info(f"   Merged {auto_merged} highly similar memories")
+    logger.info(f"   {'[DRY-RUN] Would merge' if dry_run else 'Merged'} {auto_merged} highly similar memories")
 
     if len(conflicts) - auto_merged > 0:
         logger.info(f"   {len(conflicts) - auto_merged} potential duplicates need manual review — run: memory-tool conflicts")
 
     # 2.5 Reconsolidation: find near-duplicates (85-95% similarity) and auto-merge
     logger.info("🧠 Reconsolidating near-duplicate memories...")
-    reconsolidated = reconsolidate_memories(conn)
-    logger.info(f"   Reconsolidated {reconsolidated} near-duplicates")
+    if dry_run:
+        logger.info("   [DRY-RUN] Skipping reconsolidation")
+        reconsolidated = 0
+    else:
+        reconsolidated = reconsolidate_memories(conn)
+    logger.info(f"   {'[DRY-RUN] Would reconsolidate' if dry_run else 'Reconsolidated'} {reconsolidated} near-duplicates")
 
     # 3. Normalize relative dates in memory content
     logger.info("📅 Normalizing relative dates...")
@@ -316,6 +327,16 @@ def cmd_dream() -> None:
     # 6. Re-export MEMORY.md
     logger.debug("Re-exporting MEMORY.md...")
     _get_export_memory_md()(None)
+
+    # 6.5. Reclaim disk space after consolidation
+    try:
+        inactive_count = conn.execute("SELECT COUNT(*) FROM memories WHERE active = 0").fetchone()[0]
+        if inactive_count > 50:
+            print(f"[dream] Vacuuming database ({inactive_count} inactive memories)...")
+            conn.execute("VACUUM")
+            print(f"[dream] Vacuum complete.")
+    except Exception as e:
+        print(f"[dream] Vacuum skipped: {e}")
 
     # 7. Generate dream report and save as memory
     report_summary = f"Dream cycle complete: {total_insights} insights extracted, {auto_merged} memories consolidated, {reconsolidated} near-duplicates reconsolidated, {consol['merged']} duplicates merged, {consol['insights']} patterns found, {consol['pruned']} pruned, {total_dates_normalized} dates normalized, {feedback_results['boosted']} feedback-boosted, {feedback_results['decayed']} feedback-decayed, {feedback_results['flagged']} feedback-flagged, {belief_results['merged']} beliefs merged, {belief_results['predictions_expired']} predictions expired, {belief_results['beliefs_weakened']} beliefs weakened, {belief_results.get('deprecated', 0)} beliefs deprecated, {tier_results['working_to_episodic']} working→episodic, {tier_results['episodic_to_semantic']} episodic→semantic, {promoted} promoted to semantic, {demoted} demoted to episodic, {expired} working expired, {len(high_risk)} high-risk drift candidates detected from {len(unprocessed)} transcripts"
