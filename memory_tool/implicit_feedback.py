@@ -400,7 +400,14 @@ def process_turn_feedback(
         'redirect': [],
         'contradiction': [],
         'flow': 'none',
+        # retrieval_miss subtypes (split for census interpretability):
+        #   echo_fp   — echoed (trigram match) but not cited. Primary signal for
+        #               measuring echo false-positive rate. Golden set targets this.
+        #   unnoticed — surfaced, not echoed, not cited. Plain retrieval noise.
+        # retrieval_miss = union of both (backward compat for actuator/callers).
         'retrieval_miss': [],
+        'retrieval_miss_echo_fp': [],
+        'retrieval_miss_unnoticed': [],
         'retrieval_miss_demoted': []
     }
 
@@ -430,8 +437,9 @@ def process_turn_feedback(
                 if not was_cited:
                     # Echoed but not cited = retrieval hit, generation miss.
                     # apply_echo_feedback already returned early (no FSRS boost).
-                    # Count toward miss actuator so the pattern demotes over time.
+                    # Subtype echo_fp: primary signal for measuring echo FP rate.
                     results['retrieval_miss'].append(mem_id)
+                    results['retrieval_miss_echo_fp'].append(mem_id)
 
         # Signal 2: Redirect Detection
         # Scope penalty to cited memories if available, else fall back to surfaced
@@ -473,15 +481,17 @@ def process_turn_feedback(
             elif turns_since_surface >= 8:
                 results['flow'] = 'penalize'
 
-        # Echo detection on surfaced-but-uncited memories (new signal)
-        # Identify memories that were surfaced but NOT cited and NOT echoed
+        # Retrieval miss — unnoticed subtype:
+        # Surfaced but NOT echoed AND NOT cited. Plain retrieval noise.
+        # (echo_fp subtype is written inline in Signal 1 above.)
         if cited_memory_ids is not None:
             echoed_ids = set(results['echo'])
             cited_ids = set(cited_memory_ids)
             for mem_id in surfaced_memory_ids:
                 if mem_id not in echoed_ids and mem_id not in cited_ids:
                     results['retrieval_miss'].append(mem_id)
-                    logger.debug(f"[RetrievalMiss] Memory {mem_id} surfaced but not cited or echoed")
+                    results['retrieval_miss_unnoticed'].append(mem_id)
+                    logger.debug(f"[RetrievalMiss:unnoticed] Memory {mem_id} surfaced, not echoed, not cited")
 
         # Signal 4: Retrieval miss actuator
         # Policy: if a memory has been retrieval_miss'd this turn, increment its miss counter.
