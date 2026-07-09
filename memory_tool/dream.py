@@ -474,22 +474,29 @@ def consolidate_memories(conn: sqlite3.Connection) -> Dict[str, int]:
                     (new_proof_count, new_sources_json, keep_id)
                 )
 
-                # Sum signal counts from merged memory
-                conn.execute("""
-                    UPDATE memories
-                    SET promotion_signals = promotion_signals + (
-                        SELECT COALESCE(promotion_signals, 0) FROM memories WHERE id = ?
-                    ),
-                    demotion_signals = demotion_signals + (
-                        SELECT COALESCE(demotion_signals, 0) FROM memories WHERE id = ?
-                    )
-                    WHERE id = ?
-                """, (discard_id, discard_id, keep_id))
-                # Note: reps are summed (existing behavior), stability takes max (existing behavior).
-                # FSRS post-merge state is intentionally inconsistent (log-only). Stability=max, difficulty=avg, reps=sum are approximations.
+                # Atomic merge: sum signals + deactivate loser in one transaction
+                conn.execute("SAVEPOINT merge_memory")
+                try:
+                    # Sum signal counts from merged memory
+                    conn.execute("""
+                        UPDATE memories
+                        SET promotion_signals = promotion_signals + (
+                            SELECT COALESCE(promotion_signals, 0) FROM memories WHERE id = ?
+                        ),
+                        demotion_signals = demotion_signals + (
+                            SELECT COALESCE(demotion_signals, 0) FROM memories WHERE id = ?
+                        )
+                        WHERE id = ?
+                    """, (discard_id, discard_id, keep_id))
+                    # Note: reps are summed (existing behavior), stability takes max (existing behavior).
+                    # FSRS post-merge state is intentionally inconsistent (log-only). Stability=max, difficulty=avg, reps=sum are approximations.
 
-                # Merge: soft delete discard
-                conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))
+                    # Merge: soft delete discard
+                    conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))
+                    conn.execute("RELEASE SAVEPOINT merge_memory")
+                except Exception as e:
+                    conn.execute("ROLLBACK TO SAVEPOINT merge_memory")
+                    raise
                 seen_ids.add(discard_id)
                 results["merged"] += 1
 
@@ -655,21 +662,28 @@ def reconsolidate_memories(conn: sqlite3.Connection) -> int:
                     # Re-embed the updated memory
                     embed_and_store(conn, keep_id, updated_content)
 
-                # Sum signal counts from merged memory
-                conn.execute("""
-                    UPDATE memories
-                    SET promotion_signals = promotion_signals + (
-                        SELECT COALESCE(promotion_signals, 0) FROM memories WHERE id = ?
-                    ),
-                    demotion_signals = demotion_signals + (
-                        SELECT COALESCE(demotion_signals, 0) FROM memories WHERE id = ?
-                    )
-                    WHERE id = ?
-                """, (discard_id, discard_id, keep_id))
-                # FSRS post-merge state is intentionally inconsistent (log-only). Stability=max, difficulty=avg, reps=sum are approximations.
+                # Atomic merge: sum signals + deactivate loser in one transaction
+                conn.execute("SAVEPOINT merge_memory")
+                try:
+                    # Sum signal counts from merged memory
+                    conn.execute("""
+                        UPDATE memories
+                        SET promotion_signals = promotion_signals + (
+                            SELECT COALESCE(promotion_signals, 0) FROM memories WHERE id = ?
+                        ),
+                        demotion_signals = demotion_signals + (
+                            SELECT COALESCE(demotion_signals, 0) FROM memories WHERE id = ?
+                        )
+                        WHERE id = ?
+                    """, (discard_id, discard_id, keep_id))
+                    # FSRS post-merge state is intentionally inconsistent (log-only). Stability=max, difficulty=avg, reps=sum are approximations.
 
-                # Mark as superseded
-                conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))
+                    # Mark as superseded
+                    conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))
+                    conn.execute("RELEASE SAVEPOINT merge_memory")
+                except Exception as e:
+                    conn.execute("ROLLBACK TO SAVEPOINT merge_memory")
+                    raise
                 conn.execute(
                     "INSERT OR IGNORE INTO memory_relations (source_id, target_id, relation_type) VALUES (?, ?, 'supersedes')",
                     (keep_id, discard_id)

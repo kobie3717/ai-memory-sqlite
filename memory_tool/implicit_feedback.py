@@ -365,7 +365,8 @@ def process_turn_feedback(
     previous_message: str,
     surfaced_memory_ids: List[int],
     turns_since_surface: int,
-    cited_memory_ids: Optional[List[int]] = None
+    cited_memory_ids: Optional[List[int]] = None,
+    previous_assistant_message: Optional[str] = None
 ) -> Dict[str, Any]:
     """Main entry point for implicit feedback processing.
 
@@ -374,10 +375,12 @@ def process_turn_feedback(
     Args:
         conn: Database connection (None to create new)
         current_message: Current user message
-        previous_message: Previous user message (for redirect detection)
+        previous_message: Previous user message (fallback for redirect detection)
         surfaced_memory_ids: Memory IDs that were surfaced before this turn
         turns_since_surface: Number of turns since memories were surfaced
         cited_memory_ids: Memory IDs that were cited in response (optional, for scoped penalties)
+        previous_assistant_message: Bot's previous response (preferred for redirect detection).
+                                   Falls back to previous_message if not provided.
 
     Returns:
         Dict with detection results:
@@ -442,9 +445,12 @@ def process_turn_feedback(
                     results['retrieval_miss_echo_fp'].append(mem_id)
 
         # Signal 2: Redirect Detection
-        # Scope penalty to cited memories if available, else fall back to surfaced
-        if previous_message:
-            similarity = cosine_similarity_simple(current_message, previous_message)
+        # Compare current user message to PREVIOUS BOT RESPONSE (not previous user message).
+        # A user who re-asks after a bot response signals the answer was insufficient.
+        # Fall back to previous user message if bot response not available.
+        redirect_reference = previous_assistant_message if previous_assistant_message else previous_message
+        if redirect_reference:
+            similarity = cosine_similarity_simple(current_message, redirect_reference)
 
             if similarity > 0.7:
                 # User is re-asking same question
@@ -501,11 +507,12 @@ def process_turn_feedback(
             row = conn.execute("""
                 SELECT access_count, created_at,
                        (SELECT COUNT(*) FROM search_log
-                        WHERE result_ids LIKE '%' || ? || '%'
-                        AND (used_ids IS NULL OR used_ids NOT LIKE '%' || ? || '%')
+                        WHERE (',' || result_ids || ',') LIKE ('%,' || ? || ',%')
+                        AND (used_ids IS NULL OR (',' || used_ids || ',') NOT LIKE ('%,' || ? || ',%'))
                         AND created_at > datetime('now', '-30 days')) as miss_count_30d,
                        (SELECT COUNT(*) FROM search_log
-                        WHERE used_ids LIKE '%' || ? || '%'
+                        WHERE used_ids IS NOT NULL
+                        AND (',' || used_ids || ',') LIKE ('%,' || ? || ',%')
                         AND created_at > datetime('now', '-30 days')) as cite_count_30d
                 FROM memories WHERE id = ?
             """, (str(mem_id), str(mem_id), str(mem_id), mem_id)).fetchone()

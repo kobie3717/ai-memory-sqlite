@@ -252,9 +252,11 @@ def run_tier_evolution(conn: sqlite3.Connection) -> Dict[str, int]:
 
     # Step 0: Reclassify stale T1 noise to T0 (write-time classification missed these)
     # Criteria: proof_count <= 1, access_count = 0, age > 7 days
+    # Update last_accessed_at to give 90-day grace period from today
     reclassified_to_t0 = conn.execute("""
         UPDATE memories
-        SET dispatch_priority = 0
+        SET dispatch_priority = 0,
+            last_accessed_at = datetime('now')
         WHERE active = 1
           AND dispatch_priority = 1
           AND proof_count <= 1
@@ -265,7 +267,8 @@ def run_tier_evolution(conn: sqlite3.Connection) -> Dict[str, int]:
     # Also reclassify pending/error with no access
     reclassified_to_t0 += conn.execute("""
         UPDATE memories
-        SET dispatch_priority = 0
+        SET dispatch_priority = 0,
+            last_accessed_at = datetime('now')
         WHERE active = 1
           AND dispatch_priority = 1
           AND access_count = 0

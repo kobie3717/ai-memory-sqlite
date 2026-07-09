@@ -1484,18 +1484,26 @@ def main() -> None:
             print("No feedback recorded yet.")
 
     elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "record-surface":
-        # memory-tool feedback record-surface --chat-id "123" --memory-ids "1,2,3" --message "user message"
+        # memory-tool feedback record-surface --chat-id "123" --memory-ids "1,2,3" --message "user message" --assistant-message "bot response"
         flags, _ = parse_flags(sys.argv, 3)
 
         chat_id = flags.get("chat-id", "")
         memory_ids_str = flags.get("memory-ids", "")
         message = flags.get("message", "")
+        assistant_message = flags.get("assistant-message", "")
 
         if not chat_id or not memory_ids_str:
             print("Error: --chat-id and --memory-ids are required")
             sys.exit(1)
 
         conn = get_db()
+
+        # Add last_assistant_message column if not present (migration)
+        try:
+            conn.execute("ALTER TABLE feedback_state ADD COLUMN last_assistant_message TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
         # Auto-cleanup: delete rows older than 1 hour
         one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
         conn.execute("DELETE FROM feedback_state WHERE surfaced_at < ?", (one_hour_ago,))
@@ -1503,9 +1511,9 @@ def main() -> None:
         # Insert or replace
         conn.execute("""
             INSERT OR REPLACE INTO feedback_state
-            (chat_id, surfaced_ids, last_message, turns_since, surfaced_at)
-            VALUES (?, ?, ?, 0, datetime('now'))
-        """, (chat_id, memory_ids_str, message))
+            (chat_id, surfaced_ids, last_message, last_assistant_message, turns_since, surfaced_at)
+            VALUES (?, ?, ?, ?, 0, datetime('now'))
+        """, (chat_id, memory_ids_str, message, assistant_message))
         conn.commit()
         conn.close()
         print(f"✓ Recorded surface state for chat {chat_id}")
@@ -1520,8 +1528,15 @@ def main() -> None:
             sys.exit(1)
 
         conn = get_db()
+
+        # Add last_assistant_message column if not present (migration)
+        try:
+            conn.execute("ALTER TABLE feedback_state ADD COLUMN last_assistant_message TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
         row = conn.execute("""
-            SELECT chat_id, surfaced_ids, last_message, turns_since
+            SELECT chat_id, surfaced_ids, last_message, last_assistant_message, turns_since
             FROM feedback_state WHERE chat_id = ?
         """, (chat_id,)).fetchone()
         conn.close()
@@ -1531,6 +1546,7 @@ def main() -> None:
                 'chat_id': row['chat_id'],
                 'surfaced_ids': [int(x.strip()) for x in row['surfaced_ids'].split(',') if x.strip()],
                 'last_message': row['last_message'],
+                'last_assistant_message': row['last_assistant_message'] if row['last_assistant_message'] else '',
                 'turns_since': row['turns_since']
             }
             print(json.dumps(result))
@@ -1579,11 +1595,12 @@ def main() -> None:
             print("0")
 
     elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "process":
-        # memory-tool feedback process --current-message "..." --previous-message "..." --memory-ids "1,2,3" --turns-since-surface 2 --cited-ids "1,3"
+        # memory-tool feedback process --current-message "..." --previous-message "..." --memory-ids "1,2,3" --turns-since-surface 2 --cited-ids "1,3" --assistant-message "..."
         flags, _ = parse_flags(sys.argv, 3)
 
         current_message = flags.get("current-message", "")
         previous_message = flags.get("previous-message", "")
+        assistant_message = flags.get("assistant-message", "")
         memory_ids_str = flags.get("memory-ids", "")
         cited_ids_str = flags.get("cited-ids", "")
         turns_since_surface = int(flags.get("turns-since-surface", 0))
@@ -1602,18 +1619,20 @@ def main() -> None:
             previous_message=previous_message,
             surfaced_memory_ids=memory_ids,
             turns_since_surface=turns_since_surface,
-            cited_memory_ids=cited_ids
+            cited_memory_ids=cited_ids,
+            previous_assistant_message=assistant_message if assistant_message else None
         )
 
         # Output as JSON for bot consumption
         print(json.dumps(results))
 
     elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "record-surface":
-        # memory-tool feedback record-surface --chat-id "123" --memory-ids "1,2,3" --message "text"
+        # memory-tool feedback record-surface --chat-id "123" --memory-ids "1,2,3" --message "text" --assistant-message "..."
         flags, _ = parse_flags(sys.argv, 3)
         chat_id = flags.get("chat-id", "")
         memory_ids_str = flags.get("memory-ids", "")
         message = flags.get("message", "")
+        assistant_message = flags.get("assistant-message", "")
         if not chat_id:
             print("Error: --chat-id required"); sys.exit(1)
         conn = get_db()
@@ -1624,11 +1643,16 @@ def main() -> None:
             turns_since INTEGER DEFAULT 0,
             surfaced_at TEXT NOT NULL
         )""")
+        # Add last_assistant_message column if not present
+        try:
+            conn.execute("ALTER TABLE feedback_state ADD COLUMN last_assistant_message TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         # TTL cleanup: delete rows older than 1 hour
         conn.execute("DELETE FROM feedback_state WHERE surfaced_at < datetime('now', '-24 hours')")
         conn.execute("""INSERT OR REPLACE INTO feedback_state
-            (chat_id, surfaced_ids, last_message, turns_since, surfaced_at)
-            VALUES (?, ?, ?, 0, datetime('now'))""", (chat_id, memory_ids_str, message))
+            (chat_id, surfaced_ids, last_message, last_assistant_message, turns_since, surfaced_at)
+            VALUES (?, ?, ?, ?, 0, datetime('now'))""", (chat_id, memory_ids_str, message, assistant_message))
         conn.commit(); conn.close()
         print("ok")
 
@@ -1641,13 +1665,19 @@ def main() -> None:
         conn = get_db()
         try:
             conn.execute("CREATE TABLE IF NOT EXISTS feedback_state (chat_id TEXT PRIMARY KEY, surfaced_ids TEXT NOT NULL, last_message TEXT NOT NULL, turns_since INTEGER DEFAULT 0, surfaced_at TEXT NOT NULL)")
+            # Add last_assistant_message column if not present
+            try:
+                conn.execute("ALTER TABLE feedback_state ADD COLUMN last_assistant_message TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
             row = conn.execute("SELECT * FROM feedback_state WHERE chat_id = ? AND surfaced_at > datetime('now', '-24 hours')", (chat_id,)).fetchone()
         except Exception:
             row = None
         conn.close()
         if row:
             ids = [int(x.strip()) for x in row['surfaced_ids'].split(',') if x.strip()]
-            print(json.dumps({"chat_id": row['chat_id'], "surfaced_ids": ids, "last_message": row['last_message'], "turns_since": row['turns_since']}))
+            last_asst = row['last_assistant_message'] if 'last_assistant_message' in row.keys() else ''
+            print(json.dumps({"chat_id": row['chat_id'], "surfaced_ids": ids, "last_message": row['last_message'], "last_assistant_message": last_asst, "turns_since": row['turns_since']}))
         else:
             print("null")
 
