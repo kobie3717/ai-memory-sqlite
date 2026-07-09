@@ -187,12 +187,17 @@ def touch_memory(conn: sqlite3.Connection, mem_id: int) -> None:
         new_d = fsrs_new_difficulty(old_d, rating)
         new_interval = fsrs_next_interval(new_s)
 
+        # NOTE: fsrs_reps increment removed from touch path (2026-07 citation_count migration).
+        # touch_memory writes surface-count semantics (times FTS returned this memory).
+        # fsrs_reps now only increments via echo feedback (apply_echo_feedback) — the
+        # legitimate FSRS repetition signal. Pre-migration DBs have contaminated reps
+        # (touch equality), but new increments are citation-gated.
         conn.execute("""
             UPDATE memories SET
                 fsrs_stability = ?, fsrs_difficulty = ?, fsrs_interval = ?,
-                fsrs_reps = ?, last_accessed_at = datetime('now')
+                last_accessed_at = datetime('now')
             WHERE id = ?
-        """, (new_s, new_d, new_interval, reps + 1, mem_id))
+        """, (new_s, new_d, new_interval, mem_id))
 
         # Update importance after FSRS update
         update_importance(mem_id, conn)

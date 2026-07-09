@@ -41,6 +41,7 @@ def classify_dispatch_priority(memory_dict: Dict[str, Any]) -> int:
     category = memory_dict.get('category', '')
     proof_count = memory_dict.get('proof_count', 1)
     access_count = memory_dict.get('access_count', 0)
+    citation_count = memory_dict.get('citation_count', 0)
     created_at = memory_dict.get('created_at', '')
     tags = memory_dict.get('tags', '')
 
@@ -76,17 +77,22 @@ def classify_dispatch_priority(memory_dict: Dict[str, Any]) -> int:
     if proof_count >= 5 and access_count >= 3:
         return 2
 
-    # Access-alone path — threshold calibrated for CITATION semantics.
-    # Under surface-semantics (pre-2026-07), ≥20 was correct (surfaced ~10x/wk).
-    # Under citation-semantics, access_count only increments when Claude cites
-    # the memory inline ([mem:N]). Expected rate: 2-5 citations/week per active memory.
+    # Citation-alone path — threshold calibrated for CITATION semantics.
+    # citation_count increments when Claude cites the memory inline ([mem:N]).
+    # Expected rate: 2-5 citations/week per active memory.
     # ≥7 citation-counts ≈ ~1-3 weeks of active use — reasonable T2 signal.
-    if access_count >= 7:
+    # access_count remains as surface-count (times FTS returned this memory) — used
+    # for T3 gates and stability checks, but not for T2 citation gate.
+    if citation_count >= 7:
         return 2
 
-    # Tier 0: Noise - low value memories
-    # Check if old and never accessed
-    if proof_count == 1 and access_count == 0 and created_at:
+    # Tier 0: Noise - surfaced but never cited, and old
+    # citation_count=0 means "surfaced but never cited by Claude" (echoed-uncited = retrieval miss)
+    # Combined with age guard: memories that were shown and ignored.
+    # access_count<3 prevents mass T0 reclassification on migration day — only truly-unseen
+    # memories (surface<3x) are T0 candidates. Memories with high surface count but zero
+    # citations are retrieval-miss noise but need separate actuator (not immediate T0).
+    if proof_count <= 1 and citation_count == 0 and access_count < 3 and created_at:
         try:
             created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00')).replace(tzinfo=None)
             age_days = (datetime.now() - created_dt).days
@@ -95,8 +101,8 @@ def classify_dispatch_priority(memory_dict: Dict[str, Any]) -> int:
         except (ValueError, AttributeError):
             pass  # Invalid date, skip this check
 
-    # Pending/error categories with no access are noise
-    if category in ('pending', 'error') and access_count == 0:
+    # Pending/error categories with no citations are noise
+    if category in ('pending', 'error') and citation_count == 0:
         return 0
 
     # Default: Tier 1 (routine)

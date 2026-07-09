@@ -109,6 +109,7 @@ def init_db() -> None:
         "last_promoted_at": "ALTER TABLE memories ADD COLUMN last_promoted_at TEXT DEFAULT NULL",
         "last_demoted_at": "ALTER TABLE memories ADD COLUMN last_demoted_at TEXT DEFAULT NULL",
         "tier_locked_until": "ALTER TABLE memories ADD COLUMN tier_locked_until TEXT DEFAULT NULL",
+        "citation_count": "ALTER TABLE memories ADD COLUMN citation_count INTEGER DEFAULT 0",
     }
 
     # Whitelist for beliefs table migrations
@@ -199,7 +200,8 @@ def init_db() -> None:
             promotion_signals INTEGER DEFAULT 0,
             last_promoted_at TEXT DEFAULT NULL,
             last_demoted_at TEXT DEFAULT NULL,
-            tier_locked_until TEXT DEFAULT NULL
+            tier_locked_until TEXT DEFAULT NULL,
+            citation_count INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS memory_relations (
@@ -573,5 +575,61 @@ def init_db() -> None:
     from .contradiction import ensure_contradiction_table
     ensure_contradiction_table(conn)
 
+    # Backfill citation_count from search_log.used_ids (one-time migration)
+    _backfill_citation_count(conn)
+
     conn.commit()
     conn.close()
+
+
+def _backfill_citation_count(conn: sqlite3.Connection) -> int:
+    """Backfill citation_count from search_log.used_ids (post-migration history only).
+
+    search_log.used_ids contains comma-separated memory IDs that were cited.
+    This is thin history (only exists since log-usage was wired), but provides
+    a real seed that validates the write path against known data.
+
+    Returns: number of memories updated
+    """
+    # Check if citation_count column exists first
+    try:
+        conn.execute("SELECT citation_count FROM memories LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist yet, skip backfill (will run after ALTER TABLE)
+        return 0
+
+    # Check if backfill already ran (any citation_count > 0)
+    existing = conn.execute("SELECT COUNT(*) as c FROM memories WHERE citation_count > 0").fetchone()
+    if existing and existing['c'] > 0:
+        # Backfill already ran
+        return 0
+
+    rows = conn.execute(
+        "SELECT used_ids FROM search_log WHERE used_ids IS NOT NULL AND used_ids != ''"
+    ).fetchall()
+
+    if not rows:
+        return 0
+
+    from collections import Counter
+    counts = Counter()
+    for row in rows:
+        for id_str in row[0].split(','):
+            id_str = id_str.strip()
+            if id_str.isdigit():
+                counts[int(id_str)] += 1
+
+    updated = 0
+    for mem_id, count in counts.items():
+        result = conn.execute(
+            "UPDATE memories SET citation_count = ? WHERE id = ? AND citation_count = 0",
+            (count, mem_id)
+        ).rowcount
+        updated += result
+
+    if updated > 0:
+        from .config import get_logger
+        logger = get_logger(__name__)
+        logger.info(f"[Migration] Backfilled citation_count for {updated} memories from search_log history")
+
+    return updated

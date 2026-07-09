@@ -1580,6 +1580,16 @@ def main() -> None:
 
         conn = get_db()
         conn.execute("UPDATE search_log SET used_ids = ? WHERE id = ?", (used_ids_str, int(search_id)))
+
+        # Also increment citation_count on each cited memory (deduplicated)
+        cited_ids = list(set(int(x.strip()) for x in used_ids_str.split(',') if x.strip()))
+        if cited_ids:
+            placeholders = ','.join('?' * len(cited_ids))
+            conn.execute(
+                f"UPDATE memories SET citation_count = citation_count + 1 WHERE id IN ({placeholders})",
+                cited_ids
+            )
+
         conn.commit()
         conn.close()
         print(f"✓ Logged usage for search #{search_id}")
@@ -1704,6 +1714,16 @@ def main() -> None:
             conn = get_db()
             try:
                 conn.execute("UPDATE search_log SET used_ids = ? WHERE id = ?", (used_ids_str, int(search_id)))
+
+                # Also increment citation_count on each cited memory (deduplicated)
+                cited_ids = list(set(int(x.strip()) for x in used_ids_str.split(',') if x.strip()))
+                if cited_ids:
+                    placeholders = ','.join('?' * len(cited_ids))
+                    conn.execute(
+                        f"UPDATE memories SET citation_count = citation_count + 1 WHERE id IN ({placeholders})",
+                        cited_ids
+                    )
+
                 conn.commit()
             except Exception:
                 pass

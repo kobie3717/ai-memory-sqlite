@@ -35,7 +35,18 @@ def calc_relevance(project: Optional[str], tags: Optional[str], active_projects:
 
 
 def calc_frequency(access_count: Optional[int], fsrs_reps: Optional[int]) -> float:
-    """Frequency based on how often memory is accessed."""
+    """Frequency based on how often memory is accessed.
+
+    Post-2026-07 citation_count migration:
+    - access_count = surface_count (times FTS returned this memory)
+    - fsrs_reps = FSRS repetitions (echo-gated increments only, no touch writes)
+    - citation_count = times Claude cited inline ([mem:N]) — NOT used here yet
+
+    Decision: Keep combining access_count + fsrs_reps for now. After migration,
+    access_count stays as surface metric and fsrs_reps becomes echo-only. They
+    diverge but remain additive measures of memory exposure (retrieval + citation).
+    Future refinement: replace with citation_count once clean data accumulates.
+    """
     total = (access_count or 0) + (fsrs_reps or 0)
     if total == 0:
         return 0.0
