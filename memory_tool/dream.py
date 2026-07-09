@@ -348,8 +348,24 @@ def cmd_dream() -> None:
     except Exception as e:
         print(f"[dream] Vacuum failed: {e}")
 
+    # 6.6. Enforce Tier-3 dispatch cap (200 memories)
+    logger.info("🚦 Enforcing Tier-3 dispatch cap...")
+    from .dispatch import enforce_tier3_cap
+    demoted_dispatch = enforce_tier3_cap(conn)
+    if demoted_dispatch > 0:
+        logger.info(f"   Demoted {demoted_dispatch} Tier-3 memories to Tier 2 (cap: 200)")
+
+    # 6.7. Tier Evolution (behavioral signal-based promotion/demotion)
+    logger.info("🔄 Phase: Tier Evolution (behavioral signals)...")
+    from .tier_evolution import run_tier_evolution
+    evolution_results = run_tier_evolution(conn)
+    logger.info(f"   Reclassified to T0: {evolution_results['reclassified_to_t0']} memories")
+    logger.info(f"   Expired: {evolution_results['expired']} Tier 0 memories")
+    logger.info(f"   Stability-demoted: {evolution_results['stability_demoted']} memories")
+    logger.info(f"   Tier 3 demoted: {evolution_results['tier3_demoted']} memories")
+
     # 7. Generate dream report and save as memory
-    report_summary = f"Dream cycle complete: {total_insights} insights extracted, {auto_merged} memories consolidated, {reconsolidated} near-duplicates reconsolidated, {consol['merged']} duplicates merged, {consol['insights']} patterns found, {consol['pruned']} pruned, {total_dates_normalized} dates normalized, {feedback_results['boosted']} feedback-boosted, {feedback_results['decayed']} feedback-decayed, {feedback_results['flagged']} feedback-flagged, {belief_results['merged']} beliefs merged, {belief_results['predictions_expired']} predictions expired, {belief_results['beliefs_weakened']} beliefs weakened, {belief_results.get('deprecated', 0)} beliefs deprecated, {tier_results['working_to_episodic']} working→episodic, {tier_results['episodic_to_semantic']} episodic→semantic, {promoted} promoted to semantic, {demoted} demoted to episodic, {expired} working expired, {len(high_risk)} high-risk drift candidates detected from {len(unprocessed)} transcripts"
+    report_summary = f"Dream cycle complete: {total_insights} insights extracted, {auto_merged} memories consolidated, {reconsolidated} near-duplicates reconsolidated, {consol['merged']} duplicates merged, {consol['insights']} patterns found, {consol['pruned']} pruned, {total_dates_normalized} dates normalized, {feedback_results['boosted']} feedback-boosted, {feedback_results['decayed']} feedback-decayed, {feedback_results['flagged']} feedback-flagged, {belief_results['merged']} beliefs merged, {belief_results['predictions_expired']} predictions expired, {belief_results['beliefs_weakened']} beliefs weakened, {belief_results.get('deprecated', 0)} beliefs deprecated, {tier_results['working_to_episodic']} working→episodic, {tier_results['episodic_to_semantic']} episodic→semantic, {promoted} promoted to semantic, {demoted} demoted to episodic, {expired} working expired, {demoted_dispatch} dispatch-demoted (Tier 3→2), {evolution_results['reclassified_to_t0']} reclassified to T0, {evolution_results['expired']} Tier 0 expired, {evolution_results['stability_demoted']} stability-demoted, {evolution_results['tier3_demoted']} Tier 3 demoted, {len(high_risk)} high-risk drift candidates detected from {len(unprocessed)} transcripts"
 
     today = datetime.now().strftime('%Y-%m-%d')
     _get_add_memory()(
@@ -374,6 +390,9 @@ def cmd_dream() -> None:
     print(f"   🔮 {belief_results['merged']} beliefs merged / {belief_results['predictions_expired']} predictions expired / {belief_results['beliefs_weakened']} beliefs weakened / {belief_results.get('deprecated', 0)} beliefs deprecated")
     print(f"   🎯 {tier_results['working_to_episodic']} promoted to episodic / {tier_results['episodic_to_semantic']} promoted to semantic")
     print(f"   🔄 {promoted} promoted to semantic / {demoted} demoted to episodic / {expired} working expired")
+    if demoted_dispatch > 0:
+        print(f"   🚦 {demoted_dispatch} Tier-3 dispatch memories demoted to Tier 2 (cap: 200)")
+    print(f"   🔄 Tier Evolution: {evolution_results['reclassified_to_t0']} reclassified to T0, {evolution_results['expired']} expired, {evolution_results['stability_demoted']} stability-demoted, {evolution_results['tier3_demoted']} Tier 3 demoted")
     if high_risk:
         print(f"   ⚠️  {len(high_risk)} high-risk drift candidates need validation (run 'memory-tool validate scan')")
     print(f"   💾 Report saved to memory")
@@ -454,6 +473,20 @@ def consolidate_memories(conn: sqlite3.Connection) -> Dict[str, int]:
                     "UPDATE memories SET proof_count = ?, source_memory_ids = ? WHERE id = ?",
                     (new_proof_count, new_sources_json, keep_id)
                 )
+
+                # Sum signal counts from merged memory
+                conn.execute("""
+                    UPDATE memories
+                    SET promotion_signals = promotion_signals + (
+                        SELECT COALESCE(promotion_signals, 0) FROM memories WHERE id = ?
+                    ),
+                    demotion_signals = demotion_signals + (
+                        SELECT COALESCE(demotion_signals, 0) FROM memories WHERE id = ?
+                    )
+                    WHERE id = ?
+                """, (discard_id, discard_id, keep_id))
+                # Note: reps are summed (existing behavior), stability takes max (existing behavior).
+                # FSRS post-merge state is intentionally inconsistent (log-only). Stability=max, difficulty=avg, reps=sum are approximations.
 
                 # Merge: soft delete discard
                 conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))
@@ -621,6 +654,19 @@ def reconsolidate_memories(conn: sqlite3.Connection) -> int:
 
                     # Re-embed the updated memory
                     embed_and_store(conn, keep_id, updated_content)
+
+                # Sum signal counts from merged memory
+                conn.execute("""
+                    UPDATE memories
+                    SET promotion_signals = promotion_signals + (
+                        SELECT COALESCE(promotion_signals, 0) FROM memories WHERE id = ?
+                    ),
+                    demotion_signals = demotion_signals + (
+                        SELECT COALESCE(demotion_signals, 0) FROM memories WHERE id = ?
+                    )
+                    WHERE id = ?
+                """, (discard_id, discard_id, keep_id))
+                # FSRS post-merge state is intentionally inconsistent (log-only). Stability=max, difficulty=avg, reps=sum are approximations.
 
                 # Mark as superseded
                 conn.execute("UPDATE memories SET active = 0 WHERE id = ?", (discard_id,))

@@ -440,10 +440,21 @@ def smart_ingest(category: str, content: str, tags: str = "", project: Optional[
         elif score > 0.50 and project == best_proj:
             # Insert new, mark old as superseded
             conn = get_db()
+
+            # Compute dispatch_priority
+            from .dispatch import classify_dispatch_priority
+            dispatch_priority = classify_dispatch_priority({
+                'category': category,
+                'proof_count': 1,
+                'access_count': 0,
+                'tags': tags,
+                'created_at': datetime.now().isoformat()
+            })
+
             cur = conn.execute(
-                """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure_condition, is_pinned)
-                   VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure, 1 if is_pinned else 0)
+                """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure_condition, is_pinned, dispatch_priority)
+                   VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure, 1 if is_pinned else 0, dispatch_priority)
             )
             new_id = cur.lastrowid
 
@@ -501,10 +512,21 @@ def smart_ingest(category: str, content: str, tags: str = "", project: Optional[
 
     # CREATE: Normal insert
     conn = get_db()
+
+    # Compute dispatch_priority
+    from .dispatch import classify_dispatch_priority
+    dispatch_priority = classify_dispatch_priority({
+        'category': category,
+        'proof_count': 1,
+        'access_count': 0,
+        'tags': tags,
+        'created_at': datetime.now().isoformat()
+    })
+
     cur = conn.execute(
-        """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure_condition, is_pinned)
-           VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure, 1 if is_pinned else 0)
+        """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure_condition, is_pinned, dispatch_priority)
+           VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure, 1 if is_pinned else 0, dispatch_priority)
     )
     mem_id = cur.lastrowid
 
@@ -583,10 +605,20 @@ def add_memory(category: str, content: str, tags: str = "", project: Optional[st
             }
             mem_tier = classify_tier(memory_row)
 
+        # Compute dispatch_priority
+        from .dispatch import classify_dispatch_priority
+        dispatch_priority = classify_dispatch_priority({
+            'category': category,
+            'proof_count': 1,
+            'access_count': 0,
+            'tags': tags,
+            'created_at': datetime.now().isoformat()
+        })
+
         cur = conn.execute(
-            """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure_condition, is_pinned)
-               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, mem_tier, agent_id, disclosure, 1 if is_pinned else 0)
+            """INSERT INTO memories (category, content, tags, project, priority, accessed_at, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, tier, agent_id, disclosure_condition, is_pinned, dispatch_priority)
+               VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (category, content, tags, project, priority, expires_at, source, topic_key, derived_from, citations, reasoning, content_hash, wing, room, mem_tier, agent_id, disclosure, 1 if is_pinned else 0, dispatch_priority)
         )
         mem_id = cur.lastrowid
         if related_to:
@@ -923,6 +955,16 @@ def search_memories(query: str, mode: str = "hybrid", since: Optional[str] = Non
         filtered_count = before_count - len(rows)
         if filtered_count > 0:
             logger.debug(f"Access control filtered {filtered_count} memories")
+
+    # Apply dispatch filtering based on query urgency
+    from .dispatch import classify_query_urgency, apply_dispatch_filter, cap_render_results
+    query_urgency = classify_query_urgency(query)
+    before_dispatch = len(rows)
+    rows = apply_dispatch_filter(rows, query_urgency)
+    rows = cap_render_results(rows, max_tier3=3)
+    after_dispatch = len(rows)
+    if before_dispatch != after_dispatch:
+        logger.debug(f"Dispatch filter ({query_urgency}): {before_dispatch} -> {after_dispatch} results")
 
     # Calculate latency
     latency_ms = int((time.time() - start_time) * 1000)

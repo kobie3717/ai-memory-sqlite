@@ -5,7 +5,7 @@ import os
 import json
 import sqlite3
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple, Any
 
 # Import all operations from the core module (which re-exports everything)
@@ -86,6 +86,7 @@ def main() -> None:
             wing=flags.get("wing"),
             room=flags.get("room"),
             tier=flags.get("tier"),
+            agent_id=flags.get("agent-id"),
             is_pinned=bool(flags.get("pin")),
         )
 
@@ -1482,6 +1483,213 @@ def main() -> None:
         else:
             print("No feedback recorded yet.")
 
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "record-surface":
+        # memory-tool feedback record-surface --chat-id "123" --memory-ids "1,2,3" --message "user message"
+        flags, _ = parse_flags(sys.argv, 3)
+
+        chat_id = flags.get("chat-id", "")
+        memory_ids_str = flags.get("memory-ids", "")
+        message = flags.get("message", "")
+
+        if not chat_id or not memory_ids_str:
+            print("Error: --chat-id and --memory-ids are required")
+            sys.exit(1)
+
+        conn = get_db()
+        # Auto-cleanup: delete rows older than 1 hour
+        one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
+        conn.execute("DELETE FROM feedback_state WHERE surfaced_at < ?", (one_hour_ago,))
+
+        # Insert or replace
+        conn.execute("""
+            INSERT OR REPLACE INTO feedback_state
+            (chat_id, surfaced_ids, last_message, turns_since, surfaced_at)
+            VALUES (?, ?, ?, 0, datetime('now'))
+        """, (chat_id, memory_ids_str, message))
+        conn.commit()
+        conn.close()
+        print(f"✓ Recorded surface state for chat {chat_id}")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "get-state":
+        # memory-tool feedback get-state --chat-id "123"
+        flags, _ = parse_flags(sys.argv, 3)
+        chat_id = flags.get("chat-id", "")
+
+        if not chat_id:
+            print("Error: --chat-id is required")
+            sys.exit(1)
+
+        conn = get_db()
+        row = conn.execute("""
+            SELECT chat_id, surfaced_ids, last_message, turns_since
+            FROM feedback_state WHERE chat_id = ?
+        """, (chat_id,)).fetchone()
+        conn.close()
+
+        if row:
+            result = {
+                'chat_id': row['chat_id'],
+                'surfaced_ids': [int(x.strip()) for x in row['surfaced_ids'].split(',') if x.strip()],
+                'last_message': row['last_message'],
+                'turns_since': row['turns_since']
+            }
+            print(json.dumps(result))
+        else:
+            print("null")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "clear-state":
+        # memory-tool feedback clear-state --chat-id "123"
+        flags, _ = parse_flags(sys.argv, 3)
+        chat_id = flags.get("chat-id", "")
+
+        if not chat_id:
+            print("Error: --chat-id is required")
+            sys.exit(1)
+
+        conn = get_db()
+        conn.execute("DELETE FROM feedback_state WHERE chat_id = ?", (chat_id,))
+        conn.commit()
+        conn.close()
+        print(f"✓ Cleared state for chat {chat_id}")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "log-usage":
+        # memory-tool feedback log-usage --search-id 42 --used-ids "1,3,7"
+        flags, _ = parse_flags(sys.argv, 3)
+        search_id = flags.get("search-id", "")
+        used_ids_str = flags.get("used-ids", "")
+
+        if not search_id or not used_ids_str:
+            print("Error: --search-id and --used-ids are required")
+            sys.exit(1)
+
+        conn = get_db()
+        conn.execute("UPDATE search_log SET used_ids = ? WHERE id = ?", (used_ids_str, int(search_id)))
+        conn.commit()
+        conn.close()
+        print(f"✓ Logged usage for search #{search_id}")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "last-search-id":
+        # memory-tool feedback last-search-id
+        conn = get_db()
+        row = conn.execute("SELECT MAX(id) as last_id FROM search_log").fetchone()
+        conn.close()
+        if row and row['last_id']:
+            print(row['last_id'])
+        else:
+            print("0")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "process":
+        # memory-tool feedback process --current-message "..." --previous-message "..." --memory-ids "1,2,3" --turns-since-surface 2 --cited-ids "1,3"
+        flags, _ = parse_flags(sys.argv, 3)
+
+        current_message = flags.get("current-message", "")
+        previous_message = flags.get("previous-message", "")
+        memory_ids_str = flags.get("memory-ids", "")
+        cited_ids_str = flags.get("cited-ids", "")
+        turns_since_surface = int(flags.get("turns-since-surface", 0))
+
+        if not current_message:
+            print("Error: --current-message is required")
+            sys.exit(1)
+
+        memory_ids = [int(x.strip()) for x in memory_ids_str.split(',') if x.strip()]
+        cited_ids = [int(x.strip()) for x in cited_ids_str.split(',') if x.strip()] if cited_ids_str else None
+
+        from .implicit_feedback import process_turn_feedback
+        results = process_turn_feedback(
+            conn=None,
+            current_message=current_message,
+            previous_message=previous_message,
+            surfaced_memory_ids=memory_ids,
+            turns_since_surface=turns_since_surface,
+            cited_memory_ids=cited_ids
+        )
+
+        # Output as JSON for bot consumption
+        print(json.dumps(results))
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "record-surface":
+        # memory-tool feedback record-surface --chat-id "123" --memory-ids "1,2,3" --message "text"
+        flags, _ = parse_flags(sys.argv, 3)
+        chat_id = flags.get("chat-id", "")
+        memory_ids_str = flags.get("memory-ids", "")
+        message = flags.get("message", "")
+        if not chat_id:
+            print("Error: --chat-id required"); sys.exit(1)
+        conn = get_db()
+        conn.execute("""CREATE TABLE IF NOT EXISTS feedback_state (
+            chat_id TEXT PRIMARY KEY,
+            surfaced_ids TEXT NOT NULL,
+            last_message TEXT NOT NULL,
+            turns_since INTEGER DEFAULT 0,
+            surfaced_at TEXT NOT NULL
+        )""")
+        # TTL cleanup: delete rows older than 1 hour
+        conn.execute("DELETE FROM feedback_state WHERE surfaced_at < datetime('now', '-24 hours')")
+        conn.execute("""INSERT OR REPLACE INTO feedback_state
+            (chat_id, surfaced_ids, last_message, turns_since, surfaced_at)
+            VALUES (?, ?, ?, 0, datetime('now'))""", (chat_id, memory_ids_str, message))
+        conn.commit(); conn.close()
+        print("ok")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "get-state":
+        # memory-tool feedback get-state --chat-id "123"
+        flags, _ = parse_flags(sys.argv, 3)
+        chat_id = flags.get("chat-id", "")
+        if not chat_id:
+            print("null"); sys.exit(0)
+        conn = get_db()
+        try:
+            conn.execute("CREATE TABLE IF NOT EXISTS feedback_state (chat_id TEXT PRIMARY KEY, surfaced_ids TEXT NOT NULL, last_message TEXT NOT NULL, turns_since INTEGER DEFAULT 0, surfaced_at TEXT NOT NULL)")
+            row = conn.execute("SELECT * FROM feedback_state WHERE chat_id = ? AND surfaced_at > datetime('now', '-24 hours')", (chat_id,)).fetchone()
+        except Exception:
+            row = None
+        conn.close()
+        if row:
+            ids = [int(x.strip()) for x in row['surfaced_ids'].split(',') if x.strip()]
+            print(json.dumps({"chat_id": row['chat_id'], "surfaced_ids": ids, "last_message": row['last_message'], "turns_since": row['turns_since']}))
+        else:
+            print("null")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "clear-state":
+        # memory-tool feedback clear-state --chat-id "123"
+        flags, _ = parse_flags(sys.argv, 3)
+        chat_id = flags.get("chat-id", "")
+        if chat_id:
+            conn = get_db()
+            try:
+                conn.execute("DELETE FROM feedback_state WHERE chat_id = ?", (chat_id,))
+                conn.commit()
+            except Exception:
+                pass
+            conn.close()
+        print("ok")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "log-usage":
+        # memory-tool feedback log-usage --search-id 42 --used-ids "1,3,7"
+        flags, _ = parse_flags(sys.argv, 3)
+        search_id = flags.get("search-id", "")
+        used_ids_str = flags.get("used-ids", "")
+        if search_id and used_ids_str:
+            conn = get_db()
+            try:
+                conn.execute("UPDATE search_log SET used_ids = ? WHERE id = ?", (used_ids_str, int(search_id)))
+                conn.commit()
+            except Exception:
+                pass
+            conn.close()
+        print("ok")
+
+    elif cmd == "feedback" and len(sys.argv) >= 3 and sys.argv[2] == "last-search-id":
+        # memory-tool feedback last-search-id
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT MAX(id) as last_id FROM search_log").fetchone()
+            print(row['last_id'] if row and row['last_id'] else "0")
+        except Exception:
+            print("0")
+        conn.close()
+
     elif cmd == "feedback" and len(sys.argv) == 3 and sys.argv[2] == "--stats":
         # memory-tool feedback --stats
         conn = get_db()
@@ -1763,6 +1971,94 @@ def main() -> None:
         print("  refute <id> --notes Y     - Mark memory as wrong and demote")
         print("  list-unvalidated          - Show unvalidated semantic memories")
         print("  report                    - Show validation statistics")
+
+    elif cmd == "tier-evolution":
+        from .tier_evolution import run_tier_evolution
+
+        if len(sys.argv) < 3:
+            print("Usage: memory-tool tier-evolution <subcommand>")
+            print("Subcommands:")
+            print("  run    - Run tier evolution batch job")
+            print("  stats  - Show tier distribution and evolution stats")
+            sys.exit(1)
+
+        subcmd = sys.argv[2]
+
+        if subcmd == "run":
+            conn = get_db()
+            results = run_tier_evolution(conn)
+            conn.commit()
+            conn.close()
+
+            print("Tier Evolution Complete:")
+            print(f"  Expired: {results['expired']} Tier 0 memories (90+ days no access)")
+            print(f"  Stability-demoted: {results['stability_demoted']} memories (failed stability gate)")
+            print(f"  Tier 3 demoted: {results['tier3_demoted']} memories (failed Tier 3 requirements)")
+
+        elif subcmd == "stats":
+            conn = get_db()
+
+            # Tier distribution
+            tier_dist = conn.execute("""
+                SELECT dispatch_priority, COUNT(*) as count
+                FROM memories
+                WHERE active = 1
+                GROUP BY dispatch_priority
+                ORDER BY dispatch_priority
+            """).fetchall()
+
+            print("Tier Distribution:")
+            for row in tier_dist:
+                tier = row['dispatch_priority']
+                count = row['count']
+                print(f"  Tier {tier}: {count} memories")
+
+            # Locked memories (cooldown)
+            locked = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM memories
+                WHERE active = 1
+                  AND tier_locked_until IS NOT NULL
+                  AND tier_locked_until > datetime('now')
+            """).fetchone()['count']
+            print(f"\nLocked (cooldown): {locked} memories")
+
+            # Pending promotions
+            pending2 = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM memories
+                WHERE active = 1
+                  AND promotion_signals = 2
+            """).fetchone()['count']
+
+            pending1 = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM memories
+                WHERE active = 1
+                  AND promotion_signals = 1
+            """).fetchone()['count']
+
+            print(f"\nPending promotion (2 signals): {pending2} memories")
+            print(f"Pending promotion (1 signal): {pending1} memories")
+
+            # Tier 0 at-risk (>60 days no access)
+            cutoff_60d = (datetime.now() - timedelta(days=60)).isoformat()
+            at_risk = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM memories
+                WHERE active = 1
+                  AND dispatch_priority = 0
+                  AND (last_accessed_at IS NULL OR last_accessed_at < ?)
+            """, (cutoff_60d,)).fetchone()['count']
+            print(f"\nTier 0 at-risk (>60 days no access): {at_risk} memories")
+
+            conn.close()
+
+        else:
+            print(f"Unknown subcommand: {subcmd}")
+            print("\nAvailable subcommands:")
+            print("  run    - Run tier evolution batch job")
+            print("  stats  - Show tier distribution and evolution stats")
 
     elif cmd == "contradict" and len(sys.argv) >= 3:
         from .contradiction import log_contradiction

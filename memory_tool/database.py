@@ -104,6 +104,11 @@ def init_db() -> None:
         "agent_id": "ALTER TABLE memories ADD COLUMN agent_id TEXT DEFAULT NULL",
         "disclosure_condition": "ALTER TABLE memories ADD COLUMN disclosure_condition TEXT DEFAULT NULL",
         "is_pinned": "ALTER TABLE memories ADD COLUMN is_pinned INTEGER DEFAULT 0",
+        "dispatch_priority": "ALTER TABLE memories ADD COLUMN dispatch_priority INTEGER DEFAULT 1 CHECK(dispatch_priority IN (0,1,2,3))",
+        "promotion_signals": "ALTER TABLE memories ADD COLUMN promotion_signals INTEGER DEFAULT 0",
+        "last_promoted_at": "ALTER TABLE memories ADD COLUMN last_promoted_at TEXT DEFAULT NULL",
+        "last_demoted_at": "ALTER TABLE memories ADD COLUMN last_demoted_at TEXT DEFAULT NULL",
+        "tier_locked_until": "ALTER TABLE memories ADD COLUMN tier_locked_until TEXT DEFAULT NULL",
     }
 
     # Whitelist for beliefs table migrations
@@ -189,7 +194,12 @@ def init_db() -> None:
             last_validated_at TEXT DEFAULT NULL,
             agent_id TEXT DEFAULT NULL,
             disclosure_condition TEXT DEFAULT NULL,
-            is_pinned INTEGER DEFAULT 0
+            is_pinned INTEGER DEFAULT 0,
+            dispatch_priority INTEGER DEFAULT 1 CHECK(dispatch_priority IN (0,1,2,3)),
+            promotion_signals INTEGER DEFAULT 0,
+            last_promoted_at TEXT DEFAULT NULL,
+            last_demoted_at TEXT DEFAULT NULL,
+            tier_locked_until TEXT DEFAULT NULL
         );
 
         CREATE TABLE IF NOT EXISTS memory_relations (
@@ -228,6 +238,7 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_tier ON memories(tier);
         CREATE INDEX IF NOT EXISTS idx_agent_id ON memories(agent_id) WHERE agent_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_pinned ON memories(is_pinned);
+        CREATE INDEX IF NOT EXISTS idx_dispatch_priority ON memories(dispatch_priority);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
             content, tags, project, category,
@@ -284,6 +295,15 @@ def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_search_log_query ON search_log(query);
         CREATE INDEX IF NOT EXISTS idx_search_log_created ON search_log(created_at);
+
+        CREATE TABLE IF NOT EXISTS feedback_state (
+            chat_id TEXT PRIMARY KEY,
+            surfaced_ids TEXT NOT NULL,
+            last_message TEXT NOT NULL,
+            turns_since INTEGER DEFAULT 0,
+            surfaced_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_feedback_state_surfaced ON feedback_state(surfaced_at);
     """)
 
     # Phase 3: Graph Intelligence tables
