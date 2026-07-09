@@ -171,13 +171,20 @@ def apply_dispatch_filter(results: List[Any], query_urgency: str) -> List[Any]:
         return []
 
     # Count T3 memories for logging
-    count_t3_in_pool = sum(1 for r in results if r.get('dispatch_priority') == 3)
+    # sqlite3.Row doesn't support .get() — use bracket access with fallback
+    def _priority(r):
+        try:
+            return r['dispatch_priority'] if 'dispatch_priority' in r.keys() else 1
+        except (KeyError, TypeError):
+            return 1
+
+    count_t3_in_pool = sum(1 for r in results if _priority(r) == 3)
     logger.debug(f"[Gate1] Query urgency classified as: {query_urgency} (T3 memories: {count_t3_in_pool})")
 
     # Gate 0: Always exclude T0 (noise) from search results.
     # T0 is not search-eligible — it's pending expiry. Gate 1 softening removed
     # the only previous floor, so T0 needs an explicit exclusion here.
-    results = [r for r in results if r.get('dispatch_priority', 1) != 0]
+    results = [r for r in results if _priority(r) != 0]
 
     # Gate 1: Soft logging only - no hard exclusion
     # All T1/T2/T3 memories pass through, Gate 3 will cap T3 at 3
@@ -193,7 +200,10 @@ def apply_dispatch_filter(results: List[Any], query_urgency: str) -> List[Any]:
                 dispatch_priority = 1
 
             if dispatch_priority == 3:
-                mem_id = row.get('id', 'unknown')
+                try:
+                    mem_id = row['id']
+                except (KeyError, TypeError):
+                    mem_id = 'unknown'
                 logger.info(f"[Gate1] Urgency={query_urgency}, query classified as routine — T3 memory {mem_id} allowed through (Gate 3 will cap). Old behavior: would have excluded.")
 
     # All memories pass through - no filtering at Gate 1
